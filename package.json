@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:build": "tauri build",
+    "tauri:dev": "tauri dev"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.15",
@@ -16,11 +19,14 @@
     "@fullcalendar/list": "^6.1.15",
     "@fullcalendar/react": "^6.1.15",
     "@fullcalendar/timegrid": "^6.1.15",
+    "@radix-ui/react-select": "^2.2.4",
     "@react-jvectormap/core": "^1.0.4",
     "@react-jvectormap/world": "^1.1.2",
     "apexcharts": "^4.1.0",
+    "axios": "^1.9.0",
     "clsx": "^2.1.1",
     "flatpickr": "^4.6.13",
+    "lucide-react": "^0.510.0",
     "react": "^19.0.0",
     "react-apexcharts": "^1.7.0",
     "react-dnd": "^16.0.1",
@@ -28,13 +34,16 @@
     "react-dom": "^19.0.0",
     "react-dropzone": "^14.3.5",
     "react-helmet-async": "^2.0.5",
+    "react-hot-toast": "^2.5.2",
     "react-router": "^7.1.5",
+    "react-router-dom": "^7.6.0",
     "swiper": "^11.2.3",
     "tailwind-merge": "^3.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.19.0",
     "@tailwindcss/postcss": "^4.0.8",
+    "@tauri-apps/cli": "^2.5.0",
     "@types/react": "^19.0.12",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",

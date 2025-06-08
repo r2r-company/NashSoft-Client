@@ -3,17 +3,11 @@ import { Link, useLocation } from "react-router";
 
 // Assume these icons are imported from an icon library
 import {
-  BoxCubeIcon,
-  CalenderIcon,
   ChevronDownIcon,
   GridIcon,
   HorizontaLDots,
-  ListIcon,
-  PageIcon,
-  PieChartIcon,
-  PlugInIcon,
   TableIcon,
-  UserCircleIcon,
+  BoxCubeIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 import SidebarWidget from "./SidebarWidget";
@@ -27,67 +21,50 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   {
-    icon: <GridIcon />,
-    name: "Dashboard",
-    subItems: [{ name: "Ecommerce", path: "/", pro: false }],
-  },
-  {
-    icon: <CalenderIcon />,
-    name: "Calendar",
-    path: "/calendar",
-  },
-  {
-    icon: <UserCircleIcon />,
-    name: "User Profile",
-    path: "/profile",
-  },
-  {
-    name: "Forms",
-    icon: <ListIcon />,
-    subItems: [{ name: "Form Elements", path: "/form-elements", pro: false }],
-  },
-  {
-    name: "Tables",
     icon: <TableIcon />,
-    subItems: [{ name: "Basic Tables", path: "/basic-tables", pro: false }],
-  },
-  {
-    name: "Pages",
-    icon: <PageIcon />,
+    name: "Документи грошові",
     subItems: [
-      { name: "Blank Page", path: "/blank", pro: false },
-      { name: "404 Error", path: "/error-404", pro: false },
+      { name: "Прихід коштів", path: "/money-in" },
+      { name: "Витрата коштів", path: "/money-out" },
     ],
+  },
+  
+  {
+    icon: <GridIcon />,
+    name: "Документи складські",
+    subItems: [
+      { name: "Поступлення", path: "/receipts" },
+      { name: "Реалізація", path: "/sales" },
+      { name: "Повернення від клієнта", path: "/return-from-client" },
+      { name: "Повернення постачальнику", path: "/return-to-supplier" },
+      { name: "Переміщення між складами", path: "/transfer" },
+      { name: "Інвентаризація", path: "/inventory" },
+      { name: "Ціноутворення", path: "/price-setting" },
+    ],    
   },
 ];
 
 const othersItems: NavItem[] = [
   {
-    icon: <PieChartIcon />,
-    name: "Charts",
-    subItems: [
-      { name: "Line Chart", path: "/line-chart", pro: false },
-      { name: "Bar Chart", path: "/bar-chart", pro: false },
-    ],
-  },
-  {
     icon: <BoxCubeIcon />,
-    name: "UI Elements",
+    name: "Довідники",
     subItems: [
-      { name: "Alerts", path: "/alerts", pro: false },
-      { name: "Avatar", path: "/avatars", pro: false },
-      { name: "Badge", path: "/badge", pro: false },
-      { name: "Buttons", path: "/buttons", pro: false },
-      { name: "Images", path: "/images", pro: false },
-      { name: "Videos", path: "/videos", pro: false },
-    ],
-  },
-  {
-    icon: <PlugInIcon />,
-    name: "Authentication",
-    subItems: [
-      { name: "Sign In", path: "/signin", pro: false },
-      { name: "Sign Up", path: "/signup", pro: false },
+      { name: "Компанії", path: "/companies" },
+      { name: "Фірми", path: "/firms" },
+      { name: "Договори", path: "/contracts" }, // ← ДОДАНО СЮДИ
+      { name: "Склади", path: "/warehouses" },
+      { name: "Відділи", path: "/departments" },
+      { name: "Номенклатура", path: "/products" },
+      { name: "Групи товарів", path: "/product-groups" },
+      { name: "Одиниці виміру", path: "/units" },
+      { name: "Постачальники", path: "/suppliers" },
+      { name: "Клієнти", path: "/customers" },
+      { name: "Типи клієнтів", path: "/customer-types" },
+      { name: "Каси/Рахунки", path: "/accounts" },
+      { name: "Типи оплат", path: "/payment-types" },
+      { name: "Типи цін", path: "/price-types" },
+      { name: "Користувачі системи", path: "/system-users" },
+      { name: "Групи доступу", path: "/access-groups" },
     ],
   },
 ];
@@ -343,7 +320,7 @@ const AppSidebar: React.FC = () => {
                 }`}
               >
                 {isExpanded || isHovered || isMobileOpen ? (
-                  "Menu"
+                  "Основні документи"
                 ) : (
                   <HorizontaLDots className="size-6" />
                 )}
@@ -359,7 +336,7 @@ const AppSidebar: React.FC = () => {
                 }`}
               >
                 {isExpanded || isHovered || isMobileOpen ? (
-                  "Others"
+                  "Довідники"
                 ) : (
                   <HorizontaLDots />
                 )}

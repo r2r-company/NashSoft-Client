@@ -1,17 +1,22 @@
-import { Link } from "react-router";
+import { Link } from "react-router-dom";
+
+type Crumb = {
+  label: string;
+  href?: string;
+};
 
 interface BreadcrumbProps {
-  pageTitle: string;
+  pageTitle?: string;
+  crumbs?: Crumb[];
 }
 
-const PageBreadcrumb: React.FC<BreadcrumbProps> = ({ pageTitle }) => {
+const PageBreadcrumb: React.FC<BreadcrumbProps> = ({ pageTitle, crumbs }) => {
+  const finalCrumbs: Crumb[] = crumbs ?? [{ label: pageTitle || "" }];
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-      <h2
-        className="text-xl font-semibold text-gray-800 dark:text-white/90"
-        x-text="pageName"
-      >
-        {pageTitle}
+      <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">
+        {finalCrumbs[finalCrumbs.length - 1]?.label}
       </h2>
       <nav>
         <ol className="flex items-center gap-1.5">
@@ -39,9 +44,22 @@ const PageBreadcrumb: React.FC<BreadcrumbProps> = ({ pageTitle }) => {
               </svg>
             </Link>
           </li>
-          <li className="text-sm text-gray-800 dark:text-white/90">
-            {pageTitle}
-          </li>
+          {finalCrumbs.map((crumb, index) => (
+            <li key={index} className="flex items-center gap-1.5 text-sm">
+              {crumb.href ? (
+                <Link
+                  to={crumb.href}
+                  className="text-gray-500 dark:text-gray-400 hover:underline"
+                >
+                  {crumb.label}
+                </Link>
+              ) : (
+                <span className="text-gray-800 dark:text-white/90 font-medium">
+                  {crumb.label}
+                </span>
+              )}
+            </li>
+          ))}
         </ol>
       </nav>
     </div>
