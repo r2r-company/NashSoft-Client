@@ -47,13 +47,44 @@ import SaleDetailPage from './pages/OtherPage/Sales/SaleDetailPage';
 import CreateSalePage from './pages/OtherPage/Sales/CreateSalesPage';
 import Contracts from "./pages/OtherPage/Contracts/Contracts";
 import ContractDetailPage from "./pages/OtherPage/Contracts/ContractDetailPage";
+import TradePoints from './pages/OtherPage/TradePoints/TradePoitns';
+import TradePointDetailPage from './pages/OtherPage/TradePoints/TradePointDetailPage';
+import PriceSettings from './pages/OtherPage/PriceSettings/PriceSetings';
+import CreatePriceSettingsPage from './pages/OtherPage/PriceSettings/CreateSettingsPage';
+import PriceSettingsDetailPage from './pages/OtherPage/PriceSettings/PriceSettingsDetailPage';
 
 
 export default function App() {
   return (
     <DictionariesProvider>
     <Router>
-      <Toaster position="top-right" /> {/* ✅ Ось він – для показу тостів */}
+      <Toaster 
+  position="top-right" 
+  containerStyle={{
+    zIndex: 999999,
+  }}
+  toastOptions={{
+    duration: 4000,
+    style: {
+      background: '#363636',
+      color: '#fff',
+    },
+    success: {
+      duration: 3000,
+      iconTheme: {
+        primary: '#4ade80',
+        secondary: '#fff',
+      },
+    },
+    error: {
+      duration: 4000,
+      iconTheme: {
+        primary: '#ef4444',
+        secondary: '#fff',
+      },
+    },
+  }}
+/>
       <ScrollToTop />
       <Routes>
         {/* 🌐 Оболонка з AppLayout */}
@@ -103,6 +134,13 @@ export default function App() {
           <Route path="/sales/:id" element={<SaleDetailPage />} />
           <Route path="/contracts" element={<Contracts />} />
           <Route path="/contracts/:id" element={<ContractDetailPage />} />
+          <Route path="/trade-points" element={<TradePoints />} />
+          <Route path="/trade-points/:id" element={<TradePointDetailPage />} />
+          <Route path="/price-settings" element={<PriceSettings />} />
+          <Route path="/price-settings/create" element={<CreatePriceSettingsPage />} />
+          <Route path="/price-settings/:id" element={<PriceSettingsDetailPage />} />
+
+
 
           
 

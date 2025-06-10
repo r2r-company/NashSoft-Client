@@ -297,9 +297,6 @@ export default function Contracts() {
                   <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
                     Статус
                   </TableCell>
-                  <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                    Активний
-                  </TableCell>
                 </tr>
               </TableHeader>
 
@@ -331,15 +328,6 @@ export default function Contracts() {
                     </TableCell>
                     <TableCell className="px-4 py-3 text-gray-800 dark:text-white">
                       {getStatusBadge(contract.status)}
-                    </TableCell>
-                    <TableCell className="px-4 py-3 text-gray-800 dark:text-white">
-                      <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                        contract.is_active 
-                          ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300" 
-                          : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
-                      }`}>
-                        {contract.is_active ? "Так" : "Ні"}
-                      </span>
                     </TableCell>
                   </tr>
                 ))}

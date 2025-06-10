@@ -39,7 +39,6 @@ const navItems: NavItem[] = [
       { name: "Повернення постачальнику", path: "/return-to-supplier" },
       { name: "Переміщення між складами", path: "/transfer" },
       { name: "Інвентаризація", path: "/inventory" },
-      { name: "Ціноутворення", path: "/price-setting" },
     ],    
   },
 ];
@@ -51,7 +50,8 @@ const othersItems: NavItem[] = [
     subItems: [
       { name: "Компанії", path: "/companies" },
       { name: "Фірми", path: "/firms" },
-      { name: "Договори", path: "/contracts" }, // ← ДОДАНО СЮДИ
+      { name: "Торгові точки", path: "/trade-points" },
+      { name: "Договори", path: "/contracts" },
       { name: "Склади", path: "/warehouses" },
       { name: "Відділи", path: "/departments" },
       { name: "Номенклатура", path: "/products" },
@@ -63,6 +63,7 @@ const othersItems: NavItem[] = [
       { name: "Каси/Рахунки", path: "/accounts" },
       { name: "Типи оплат", path: "/payment-types" },
       { name: "Типи цін", path: "/price-types" },
+      { name: "Ціноутворення", path: "/price-settings", new: true }, // 💰 ДОДАТИ ЦЮ ЛІНІЮ
       { name: "Користувачі системи", path: "/system-users" },
       { name: "Групи доступу", path: "/access-groups" },
     ],
@@ -82,11 +83,28 @@ const AppSidebar: React.FC = () => {
   );
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // const isActive = (path: string) => location.pathname === path;
+  // Перевірка активного шляху, включаючи підшляхи для детальних сторінок
   const isActive = useCallback(
-    (path: string) => location.pathname === path,
-    [location.pathname]
-  );
+  (path: string) => {
+    // Точне співпадіння для головних сторінок
+    if (location.pathname === path) {
+      return true;
+    }
+    
+    // Перевірка для підшляхів (наприклад, /price-settings/123 має підсвічувати /price-settings)
+    if (path === "/price-settings" && location.pathname.startsWith("/price-settings")) {
+      return true;
+    }
+    
+    // Можна додати інші перевірки для інших розділів
+    if (path === "/firms" && location.pathname.startsWith("/firms/")) {
+      return true;
+    }
+    
+    return false;
+  },
+  [location.pathname]
+);
 
   useEffect(() => {
     let submenuMatched = false;

@@ -1,4 +1,4 @@
-const [error, setError] = useState<string | null>(null);import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import axios from "./../../../config/api";
@@ -51,7 +51,6 @@ export default function ContractDetailPage() {
   const [accounts, setAccounts] = useState<Option[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isPosting, setIsPosting] = useState(false);
   const [isActivating, setIsActivating] = useState(false);
 
   const contractTypeOptions = [
@@ -103,8 +102,8 @@ export default function ContractDetailPage() {
         try {
           const contractRes = await axios.get(`contracts/${id}/`);
           contractData = contractRes.data;
-        } catch (error: any) {
-          if (error.response?.status === 404) {
+        } catch (apiError: any) {
+          if (apiError.response?.status === 404) {
             // Якщо договір не знайдено, створюємо mock дані для демонстрації
             contractData = {
               id: parseInt(id),
@@ -115,7 +114,7 @@ export default function ContractDetailPage() {
               account: "Основний рахунок",
               account_id: 1,
               contract_type: "partial",
-              is_active: true,
+              is_active: false,
               status: "draft", // За замовчуванням чернетка
               created_at: new Date().toISOString(),
             };
@@ -124,7 +123,7 @@ export default function ContractDetailPage() {
               style: { background: "#3b82f6", color: "white" }
             });
           } else {
-            throw error;
+            throw apiError;
           }
         }
 
@@ -133,7 +132,7 @@ export default function ContractDetailPage() {
         try {
           const suppliersRes = await axios.get("suppliers/");
           suppliersData = suppliersRes.data.map((s: any) => ({ value: s.id, label: s.name }));
-        } catch (error) {
+        } catch (suppliersError) {
           console.warn("Suppliers endpoint not available, using fallback data");
           suppliersData = [
             { value: 1, label: "Тестовий постачальник" },
@@ -145,7 +144,7 @@ export default function ContractDetailPage() {
         try {
           const clientsRes = await axios.get("customers/");
           clientsData = clientsRes.data.map((c: any) => ({ value: c.id, label: c.name }));
-        } catch (error) {
+        } catch (clientsError) {
           console.warn("Customers endpoint not available, using fallback data");
           clientsData = [
             { value: 1, label: "ТОВ Ромашка" },
@@ -157,7 +156,7 @@ export default function ContractDetailPage() {
         try {
           const paymentTypesRes = await axios.get("payment-types/");
           paymentTypesData = paymentTypesRes.data.map((pt: any) => ({ value: pt.id, label: pt.name }));
-        } catch (error) {
+        } catch (paymentError) {
           console.warn("Payment types endpoint not available, using fallback data");
           paymentTypesData = [
             { value: 1, label: "Готівка" },
@@ -173,7 +172,7 @@ export default function ContractDetailPage() {
             value: acc.id, 
             label: `${acc.name}${acc.number ? ` (${acc.number})` : ''}` 
           }));
-        } catch (error) {
+        } catch (accountsError) {
           console.warn("Accounts endpoint not available, using fallback data");
           accountsData = [
             { value: 1, label: "Основний рахунок (UA123456789)" },
@@ -188,8 +187,8 @@ export default function ContractDetailPage() {
         setPaymentTypes(paymentTypesData);
         setAccounts(accountsData);
 
-      } catch (error: any) {
-        console.error("Error loading contract data:", error);
+      } catch (mainError: any) {
+        console.error("Error loading contract data:", mainError);
         setError("Помилка завантаження даних договору");
         toast.error("Помилка завантаження даних ❌");
       } finally {
@@ -219,51 +218,51 @@ export default function ContractDetailPage() {
   };
 
   const handleSave = () => {
-    // Валідація обов'язкових полів
-    if (!form.payment_type_id || !form.account_id) {
-      toast.error("Заповніть всі обов'язкові поля ❗");
-      return;
-    }
+  // Валідація обов'язкових полів
+  if (!form.payment_type_id || !form.account_id) {
+    toast.error("Заповніть всі обов'язкові поля ❗");
+    return;
+  }
 
-    if (!form.supplier_id && !form.client_id) {
-      toast.error("Оберіть постачальника або клієнта ❗");
-      return;
-    }
+  if (!form.supplier_id && !form.client_id) {
+    toast.error("Оберіть постачальника або клієнта ❗");
+    return;
+  }
 
-    const requestBody: any = {
-      payment_type: form.payment_type_id,
-      account: form.account_id,
-      contract_type: form.contract_type,
-      is_active: form.is_active,
-      status: form.status,
-    };
-
-    // Додаємо контрагента
-    if (form.supplier_id) {
-      requestBody.supplier = form.supplier_id.toString();
-    }
-    if (form.client_id) {
-      requestBody.client = form.client_id.toString();
-    }
-
-    axios
-      .put(`contracts/${id}/`, requestBody)
-      .then((res) => {
-        const updatedContractData = res.data;
-        
-        setContract(updatedContractData);
-        setForm(updatedContractData);
-        setChanged(false);
-        setIsEditing(false);
-        setAlertMessage("Договір оновлено без помилок");
-        setShowAlert(true);
-        setTimeout(() => setShowAlert(false), 3000);
-      })
-      .catch((err) => {
-        console.error("PUT error:", err.response?.data);
-        toast.error("Помилка при збереженні ❌");
-      });
+  const requestBody: any = {
+    payment_type: form.payment_type_id,
+    account: form.account_id,
+    contract_type: form.contract_type,
+    is_active: form.is_active,
+    status: form.status,
   };
+
+  // ВИПРАВЛЕННЯ: Конвертуємо number в string для API
+  if (form.supplier_id) {
+    requestBody.supplier = form.supplier_id.toString();
+  }
+  if (form.client_id) {
+    requestBody.client = form.client_id.toString();
+  }
+
+  axios
+    .put(`contracts/${id}/`, requestBody)
+    .then((res) => {
+      const updatedContractData = res.data;
+      
+      setContract(updatedContractData);
+      setForm(updatedContractData);
+      setChanged(false);
+      setIsEditing(false);
+      setAlertMessage("Договір оновлено без помилок");
+      setShowAlert(true);
+      setTimeout(() => setShowAlert(false), 3000);
+    })
+    .catch((err) => {
+      console.error("PUT error:", err.response?.data);
+      toast.error("Помилка при збереженні ❌");
+    });
+};
 
   const handleDelete = () => {
     axios
@@ -278,47 +277,43 @@ export default function ContractDetailPage() {
   };
 
   const handleActivate = () => {
-    if (!contract) return;
-    
-    setIsActivating(true);
-    
-    const requestBody = {
-      ...form,
-      status: "active",
-      is_active: true,
-      payment_type: form.payment_type_id,
-      account: form.account_id,
-    };
-
-    // Додаємо контрагента
-    if (form.supplier_id) {
-      requestBody.supplier = form.supplier_id.toString();
-    }
-    if (form.client_id) {
-      requestBody.client = form.client_id.toString();
-    }
-
-    axios
-      .put(`contracts/${id}/`, requestBody)
-      .then((res) => {
-        const updatedContract = res.data;
-        setContract(updatedContract);
-        setForm(updatedContract);
-        toast.success("Договір успішно активовано! ✅");
-        setAlertMessage("Договір активовано та готовий до використання");
-        setShowAlert(true);
-        setTimeout(() => setShowAlert(false), 4000);
-        setShowActivateModal(false);
-      })
-      .catch((err) => {
-        console.error("Activate error:", err.response?.data);
-        const errorMsg = err.response?.data?.detail || err.response?.data?.message || "Невідома помилка";
-        toast.error(`Помилка при активації: ${errorMsg} ❌`);
-      })
-      .finally(() => {
-        setIsActivating(false);
-      });
+  if (!contract) return;
+  
+  setIsActivating(true);
+  
+  const requestBody = {
+    ...form,
+    status: "active",
+    is_active: true,
+    payment_type: form.payment_type_id,
+    account: form.account_id,
   };
+
+  // ВИПРАВЛЕННЯ: Конвертуємо number в string для API
+  if (form.supplier_id) {
+    requestBody.supplier = form.supplier_id.toString();
+  }
+  if (form.client_id) {
+    requestBody.client = form.client_id.toString();
+  }
+
+  axios
+    .put(`contracts/${id}/`, requestBody)
+    .then((res) => {
+      const updatedContract = res.data;
+      setContract(updatedContract);
+      setForm(updatedContract);
+      toast.success("Договір успішно активовано! ✅");
+      setShowActivateModal(false);
+    })
+    .catch((err) => {
+      console.error("Activation error:", err.response?.data);
+      toast.error("Помилка активації ❌");
+    })
+    .finally(() => {
+      setIsActivating(false);
+    });
+};
 
   if (loading) {
     return (
@@ -400,7 +395,7 @@ export default function ContractDetailPage() {
             Назад
           </Button>
           
-          {/* Кнопка активації/деактивації */}
+          {/* Кнопка активації */}
           {contract.status === "draft" && (
             <Button 
               variant="outline" 

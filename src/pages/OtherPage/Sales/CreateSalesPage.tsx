@@ -17,59 +17,36 @@ import {
   TableHeader,
 } from "../../../components/ui/table";
 
-type SaleForm = {
-  doc_type: string;
-  company: number;
-  firm: number;
-  warehouse: number | undefined;
-  trade_point: number | undefined;
-  customer: number | undefined;
-  contract: number | undefined;
-  auto_payment: boolean;
-  items: SaleItem[];
+type PriceSettingForm = {
+  firm_id: number | undefined;
+  date: string;
+  description: string;
+  base_type: 'product' | 'product_group';
+  base_group: number | undefined;
+  trade_points: number[];
+  items: PriceSettingItem[];
 };
 
-type SaleItem = {
+type PriceSettingItem = {
   product: number | undefined;
   product_name?: string;
-  quantity: number;
-  unit: number | undefined;
-  unit_name?: string;
-  price?: number;
-  total?: number;
+  price: number; // базова ціна з системи
+  old_price: number; // стара ціна для порівняння  
+  new_price: number; // нова ціна, яку встановлюємо
+  price_type: number;
+  vat_percent: number;
+  vat_included: boolean;
+  markup_percent: number;
+  unit: number;
+  unit_conversion: number;
+  reason: string; // причина зміни ціни
+  price_change_type: 'set' | 'increase' | 'decrease'; // тип зміни ціни
 };
 
-type Customer = {
+type Firm = {
   id: number;
   name: string;
-};
-
-type Warehouse = {
-  id: number;
-  name: string;
-};
-
-type TradePoint = {
-  id: number;
-  name: string;
-};
-
-type Contract = {
-  id: number;
-  name: string;
-  customer: number;
-  customer_name: string;
-  client?: number;
-  payment_type: number;
-  payment_type_name: string;
-  account: number;
-  account_name: string;
-  contract_type: string;
-  doc_file: string | null;
-  is_active: boolean;
-  status: string;
-  created_at?: string;
-  updated_at?: string;
+  company: string;
 };
 
 type Product = {
@@ -86,45 +63,46 @@ type Product = {
   is_active?: boolean;
 };
 
-type Unit = {
-  id: number;
-  name: string;
-};
-
-export default function CreateSalePage() {
+export default function CreatePriceSettingPage() {
   const navigate = useNavigate();
   
-  const [form, setForm] = useState<SaleForm>({
-    doc_type: "sale",
-    company: 1,
-    firm: 1,
-    warehouse: undefined,
-    trade_point: undefined,
-    customer: undefined,
-    contract: undefined,
-    auto_payment: true,
+  const [form, setForm] = useState<PriceSettingForm>({
+    firm_id: undefined,
+    date: new Date().toISOString().split('T')[0],
+    description: '',
+    base_type: 'product',
+    base_group: undefined,
+    trade_points: [1],
     items: [
-      {
-        product: undefined,
-        quantity: 1,
-        unit: undefined,
-        price: 0,
-        total: 0
-      }
-    ]
+  {
+    product: undefined,
+    price: 0,
+    old_price: 0,
+    new_price: 0,
+    price_type: 1,
+    vat_percent: 20,
+    vat_included: true,
+    markup_percent: 0,
+    unit: 1,
+    unit_conversion: 1,
+    reason: '',
+    price_change_type: 'set' as const
+  }
+]
   });
 
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [tradePoints, setTradePoints] = useState<TradePoint[]>([]);
-  const [contracts, setContracts] = useState<Contract[]>([]);
-  const [units, setUnits] = useState<Unit[]>([]);
+  const [firms, setFirms] = useState<Firm[]>([]);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
   const [currentItemIndex, setCurrentItemIndex] = useState<number>(-1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [loadingContracts, setLoadingContracts] = useState(false);
+
+  const priceChangeTypeOptions = [
+    { value: "set", label: "Встановити ціну" },
+    { value: "increase", label: "Підвищити ціну" },
+    { value: "decrease", label: "Знизити ціну" },
+  ];
 
   useEffect(() => {
     loadDictionaries();
@@ -132,191 +110,103 @@ export default function CreateSalePage() {
 
   const loadDictionaries = async () => {
     try {
-      console.log("Loading data from URLs:");
-      console.log("- Customers:", `${axios.defaults.baseURL || ''}customers/`);
-      console.log("- Warehouses:", `${axios.defaults.baseURL || ''}warehouses/`);
-      console.log("- Trade Points:", `${axios.defaults.baseURL || ''}trade-points/`);
-      console.log("- Units:", `${axios.defaults.baseURL || ''}units/`);
-
-      const requests = [
-        axios.get("customers/"),
-        axios.get("warehouses/"),
-        axios.get("trade-points/"),
-        axios.get("units/")
-      ];
-
-      const results = await Promise.allSettled(requests);
-      
-      if (results[0].status === 'fulfilled') {
-        console.log("✅ Customers loaded from API:", results[0].value.data);
-        setCustomers(results[0].value.data);
-      } else {
-        console.error("❌ Error loading customers:", results[0].reason);
-        setCustomers([]);
-        toast.error("Не вдалося завантажити клієнтів");
-      }
-
-      if (results[1].status === 'fulfilled') {
-        console.log("✅ Warehouses loaded from API:", results[1].value.data);
-        setWarehouses(results[1].value.data);
-      } else {
-        console.error("❌ Error loading warehouses:", results[1].reason);
-        setWarehouses([]);
-        toast.error("Не вдалося завантажити склади");
-      }
-
-      if (results[2].status === 'fulfilled') {
-        console.log("✅ Trade Points loaded from API:", results[2].value.data);
-        setTradePoints(results[2].value.data);
-      } else {
-        console.error("❌ Error loading trade points:", results[2].reason);
-        setTradePoints([]);
-        toast.error("Не вдалося завантажити торгові точки");
-      }
-
-      if (results[3].status === 'fulfilled') {
-        console.log("✅ Units loaded from API:", results[3].value.data);
-        setUnits(results[3].value.data);
-      } else {
-        console.error("❌ Error loading units:", results[3].reason);
-        setUnits([]);
-        toast.error("Не вдалося завантажити одиниці виміру");
-      }
-
+      console.log("Loading firms from API...");
+      const response = await axios.get("firms/");
+      console.log("✅ Firms loaded:", response.data);
+      setFirms(response.data);
       setLoading(false);
     } catch (error) {
-      console.error("Error loading dictionaries:", error);
-      toast.error("Помилка завантаження довідників");
+      console.error("❌ Error loading firms:", error);
+      setFirms([]);
+      toast.error("Не вдалося завантажити фірми");
       setLoading(false);
     }
   };
 
-  const loadContractsByCustomer = async (customerId: number) => {
-    setLoadingContracts(true);
-    setContracts([]);
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleFirmSelectChange = (value: string) => {
+    setForm(prev => ({ ...prev, firm_id: parseInt(value) }));
+  };
+
+  const handleItemChange = (index: number, field: keyof PriceSettingItem, value: string | number | boolean) => {
+  const items = [...form.items];
+  
+  if (field === 'product') {
+    const productId = parseInt(value as string) || undefined;
+    items[index] = { 
+      ...items[index], 
+      [field]: productId
+    };
     
-    try {
-      console.log(`Loading contracts for customer ${customerId}...`);
-      const response = await axios.get(`contracts/by-customer/?id=${customerId}`);
-      console.log("✅ Contracts loaded:", response.data);
-      setContracts(response.data);
-    } catch (error) {
-      console.error("❌ Error loading contracts:", error);
-      setContracts([]);
-      toast.error("Не вдалося завантажити договори для цього клієнта");
-    } finally {
-      setLoadingContracts(false);
+    if (productId) {
+      items[index].product_name = `Товар ID: ${productId}`;
     }
-  };
-
-  const handleCustomerChange = (value: string) => {
-    const customerId = parseInt(value);
-    setForm({ 
-      ...form, 
-      customer: customerId,
-      contract: undefined
-    });
-    
-    if (customerId) {
-      loadContractsByCustomer(customerId);
-    } else {
-      setContracts([]);
-    }
-  };
-
-  const handleWarehouseChange = (value: string) => {
-    setForm({ ...form, warehouse: parseInt(value) });
-  };
-
-  const handleTradePointChange = (value: string) => {
-    setForm({ ...form, trade_point: parseInt(value) });
-  };
-
-  const handleContractChange = (value: string) => {
-    setForm({ ...form, contract: parseInt(value) });
-  };
-
-  const handleAutoPaymentChange = (checked: boolean) => {
-    setForm({ ...form, auto_payment: checked });
-  };
-
-  const handleItemChange = (index: number, field: keyof SaleItem, value: string) => {
-    const items = [...form.items];
-    
-    if (field === 'product') {
-      const productId = parseInt(value) || undefined;
-      items[index] = { 
-        ...items[index], 
-        [field]: productId
-      };
-      
-      if (productId) {
-        items[index].product_name = `Товар ID: ${productId}`;
-      }
-    } else if (field === 'unit') {
-      const unitId = parseInt(value) || undefined;
-      items[index] = { 
-        ...items[index], 
-        [field]: unitId
-      };
-      
-      if (unitId) {
-        const unit = units.find(u => u.id === unitId);
-        items[index].unit_name = unit?.name || `Одиниця ID: ${unitId}`;
-      }
-    } else {
-      const numericValue = parseFloat(value) || 0;
-      items[index] = { 
-        ...items[index], 
-        [field]: numericValue 
-      };
-      
-      if (field === 'quantity' || field === 'price') {
-        const quantity = field === 'quantity' ? numericValue : items[index].quantity;
-        const price = field === 'price' ? numericValue : (items[index].price || 0);
-        items[index].total = quantity * price;
-      }
-    }
-    
-    setForm({ ...form, items });
-  };
+  } else if (typeof value === 'string' && (
+    field === 'price' || field === 'old_price' || field === 'new_price' || 
+    field === 'vat_percent' || field === 'markup_percent' || 
+    field === 'unit' || field === 'unit_conversion' || field === 'price_type'
+  )) {
+    const numericValue = parseFloat(value) || 0;
+    items[index] = { 
+      ...items[index], 
+      [field]: numericValue 
+    };
+  } else {
+    items[index] = { 
+      ...items[index], 
+      [field]: value 
+    };
+  }
+  
+  setForm(prev => ({ ...prev, items }));
+};
 
   const handleMultipleProductsSelect = (products: Product[]) => {
-    const newItems = products.map(product => ({
-      product: product.id,
-      product_name: product.name,
-      quantity: 1,
-      unit: product.unit,
-      unit_name: product.unit_name,
-      price: product.price || 0,
-      total: 1 * (product.price || 0)
-    }));
+  const newItems = products.map(product => ({
+    product: product.id,
+    product_name: product.name,
+    price: product.price || 0,
+    old_price: product.price || 0,
+    new_price: product.price || 0,
+    price_type: 1,
+    vat_percent: 20,
+    vat_included: true,
+    markup_percent: 0,
+    unit: product.unit || 1,
+    unit_conversion: 1,
+    reason: '',
+    price_change_type: 'set' as const
+  }));
 
-    setForm({ 
-      ...form, 
-      items: [...form.items.filter(item => item.product), ...newItems]
-    });
-    setShowProductModal(false);
-    setCurrentItemIndex(-1);
-  };
+  setForm(prev => ({ 
+    ...prev, 
+    items: [...prev.items.filter(item => item.product), ...newItems]
+  }));
+  setShowProductModal(false);
+  setCurrentItemIndex(-1);
+};
 
   const handleProductSelect = (product: Product) => {
-    if (currentItemIndex >= 0) {
-      const items = [...form.items];
-      items[currentItemIndex] = {
-        ...items[currentItemIndex],
-        product: product.id,
-        product_name: product.name,
-        unit: product.unit,
-        unit_name: product.unit_name,
-        price: product.price || items[currentItemIndex].price || 0,
-        total: items[currentItemIndex].quantity * (product.price || items[currentItemIndex].price || 0)
-      };
-      setForm({ ...form, items });
-    }
-    setShowProductModal(false);
-    setCurrentItemIndex(-1);
-  };
+  if (currentItemIndex >= 0) {
+    const items = [...form.items];
+    items[currentItemIndex] = {
+      ...items[currentItemIndex],
+      product: product.id,
+      product_name: product.name,
+      price: product.price || items[currentItemIndex].price,
+      old_price: product.price || items[currentItemIndex].old_price,
+      new_price: product.price || items[currentItemIndex].new_price,
+      unit: product.unit || 1
+    };
+    setForm(prev => ({ ...prev, items }));
+  }
+  setShowProductModal(false);
+  setCurrentItemIndex(-1);
+};
 
   const openProductModal = (itemIndex: number) => {
     setCurrentItemIndex(itemIndex);
@@ -329,18 +219,25 @@ export default function CreateSalePage() {
   };
 
   const addItem = () => {
-    const newItem: SaleItem = {
-      product: undefined,
-      quantity: 1,
-      unit: undefined,
-      price: 0,
-      total: 0
-    };
-    setForm({ 
-      ...form, 
-      items: [...form.items, newItem] 
-    });
+  const newItem: PriceSettingItem = {
+    product: undefined,
+    price: 0,
+    old_price: 0,
+    new_price: 0,
+    price_type: 1,
+    vat_percent: 20,
+    vat_included: true,
+    markup_percent: 0,
+    unit: 1,
+    unit_conversion: 1,
+    reason: '',
+    price_change_type: 'set' as const
   };
+  setForm(prev => ({ 
+    ...prev, 
+    items: [...prev.items, newItem] 
+  }));
+};
 
   const removeItem = (index: number) => {
     if (form.items.length <= 1) {
@@ -349,62 +246,58 @@ export default function CreateSalePage() {
     }
     const items = [...form.items];
     items.splice(index, 1);
-    setForm({ ...form, items });
+    setForm(prev => ({ ...prev, items }));
   };
 
   const validateForm = (): boolean => {
-    if (!form.customer || !form.warehouse || !form.trade_point || !form.contract) {
-      toast.error("Заповніть усі обов'язкові поля ❗");
-      return false;
-    }
-
-    const selectedCustomer = customers.find(c => c.id === form.customer);
-    if (!selectedCustomer) {
-      toast.error("Обраний клієнт не існує в системі ❗");
-      return false;
-    }
-
-    const selectedWarehouse = warehouses.find(w => w.id === form.warehouse);
-    if (!selectedWarehouse) {
-      toast.error("Обраний склад не існує в системі ❗");
-      return false;
-    }
-
-    const selectedTradePoint = tradePoints.find(tp => tp.id === form.trade_point);
-    if (!selectedTradePoint) {
-      toast.error("Обрана торгова точка не існує в системі ❗");
-      return false;
-    }
-
-    const selectedContract = contracts.find(c => c.id === form.contract);
-    if (!selectedContract) {
-      toast.error("Обраний контракт не існує в системі ❗");
-      return false;
-    }
+    console.log("=== VALIDATION ===");
+    console.log("Validating form:", form);
     
-    if (selectedContract.customer !== form.customer) {
-      toast.error("Обраний контракт не належить даному клієнту ❗");
+    if (!form.firm_id) {
+      toast.error("Оберіть фірму ❗");
+      return false;
+    }
+
+    const selectedFirm = firms.find(f => f.id === form.firm_id);
+    if (!selectedFirm) {
+      toast.error("Обрана фірма не існує в системі ❗");
+      console.log("Available firms:", firms);
+      console.log("Selected firm ID:", form.firm_id);
+      return false;
+    }
+
+    if (!form.date) {
+      toast.error("Вкажіть дату документа ❗");
+      return false;
+    }
+
+    if (form.items.length === 0) {
+      toast.error("Додайте хоча б один товар ❗");
       return false;
     }
 
     const hasEmptyItems = form.items.some(item => !item.product);
     if (hasEmptyItems) {
       toast.error("Оберіть товари для всіх позицій ❗");
+      console.log("Items with missing products:", form.items.filter(item => !item.product));
       return false;
     }
 
-    const hasEmptyUnits = form.items.some(item => !item.unit);
-    if (hasEmptyUnits) {
-      toast.error("Оберіть одиниці виміру для всіх позицій ❗");
+    const hasInvalidPrices = form.items.some(item => item.new_price < 0 || item.new_price === null || item.new_price === undefined);
+    if (hasInvalidPrices) {
+      toast.error("Нова ціна товарів має бути додатною ❗");
+      console.log("Items with invalid prices:", form.items.filter(item => item.new_price < 0 || item.new_price === null || item.new_price === undefined));
       return false;
     }
 
-    const hasInvalidQuantities = form.items.some(item => item.quantity <= 0);
-    if (hasInvalidQuantities) {
-      toast.error("Кількість товарів має бути більше нуля ❗");
+    const hasEmptyReasons = form.items.some(item => !item.reason || !item.reason.trim());
+    if (hasEmptyReasons) {
+      toast.error("Вкажіть причину зміни ціни для всіх товарів ❗");
+      console.log("Items with missing reasons:", form.items.filter(item => !item.reason || !item.reason.trim()));
       return false;
     }
 
+    console.log("✅ Form validation passed");
     return true;
   };
 
@@ -416,34 +309,40 @@ export default function CreateSalePage() {
     setSaving(true);
 
     const requestBody = {
-      doc_type: form.doc_type,
-      company: form.company,
-      firm: form.firm,
-      warehouse: form.warehouse,
-      trade_point: form.trade_point,
-      customer: form.customer,
-      contract: form.contract,
-      auto_payment: form.auto_payment,
+      company: 1,
+      firm: Number(form.firm_id),
+      valid_from: String(form.date),
+      status: "draft",
+      base_type: "product_group", // або "product" залежно від логіки
+      base_group: 2, // ID групи товарів
+      trade_points: [1], // ID торгових точок
       items: form.items.map(item => ({
-        product: item.product,
-        quantity: item.quantity,
-        unit: item.unit
-      }))
+  product: Number(item.product),
+  price_type: 1,
+  price: Number(item.new_price), // використовуємо new_price
+  vat_percent: 20,
+  vat_included: true,
+  markup_percent: item.old_price > 0 ? 
+    Math.round(((item.new_price - item.old_price) / item.old_price) * 100) : 0,
+  unit: 1,
+  unit_conversion: 1
+}))
     };
 
-    console.log("Sending request:", requestBody);
-    console.log("Available customers:", customers.map(c => ({ id: c.id, name: c.name })));
-    console.log("Available contracts:", contracts.map(c => ({ id: c.id, name: c.name, customer: c.customer })));
+    console.log("=== DEBUG INFO ===");
+    console.log("Form state:", form);
+    console.log("Selected firm ID:", form.firm_id);
+    console.log("Selected firm object:", firms.find(f => f.id === form.firm_id));
+    console.log("Date:", form.date);
+    console.log("Items count:", form.items.length);
+    console.log("Request body being sent:", JSON.stringify(requestBody, null, 2));
 
     try {
-      const response = await axios.post("document/", requestBody);
-      console.log("✅ Document created successfully:", response.data);
-      
-      toast.success("Документ реалізації створено ✅");
-      
-      // Затримка перед переходом, щоб дати час серверу обробити запит
+      const response = await axios.post("create-price-setting-document/", requestBody);
+      console.log("✅ Price setting document created successfully:", response.data);
+      toast.success("Документ ціноутворення створено ✅");
       setTimeout(() => {
-        navigate("/sales");
+        navigate("/price-setting");
       }, 500);
       
     } catch (error: unknown) {
@@ -461,13 +360,16 @@ export default function CreateSalePage() {
         
         if (axiosError.response?.data && typeof axiosError.response.data === 'object') {
           const errorData = axiosError.response.data;
+          console.log("❌ Validation errors from server:", errorData);
           
-          let errorMessage = "Помилка валідації від сервера:\n";
+          let errorMessage = "Помилки валідації:\n";
           
           Object.keys(errorData).forEach(field => {
             const fieldErrors = errorData[field];
             if (Array.isArray(fieldErrors)) {
               errorMessage += `• ${field}: ${fieldErrors.join(', ')}\n`;
+            } else if (typeof fieldErrors === 'string') {
+              errorMessage += `• ${field}: ${fieldErrors}\n`;
             }
           });
           
@@ -484,8 +386,11 @@ export default function CreateSalePage() {
     }
   };
 
-  const getTotalAmount = () => {
-    return form.items.reduce((sum, item) => sum + (item.total || 0), 0);
+  // Розрахунок відсотка зміни ціни
+  const calculatePriceChange = (oldPrice: number, newPrice: number): string => {
+    if (oldPrice === 0) return "N/A";
+    const change = ((newPrice - oldPrice) / oldPrice) * 100;
+    return `${change > 0 ? '+' : ''}${change.toFixed(1)}%`;
   };
 
   const formatPrice = (price: number) => {
@@ -505,10 +410,10 @@ export default function CreateSalePage() {
 
   return (
     <>
-      <PageMeta title="Новий документ реалізації | НашСофт" description="Створення документа реалізації товарів" />
+      <PageMeta title="Новий документ ціноутворення | НашСофт" description="Створення документа ціноутворення" />
       <PageBreadcrumb
         crumbs={[
-          { label: "Документи реалізації", href: "/sales" },
+          { label: "Ціноутворення", href: "/price-setting" },
           { label: "Новий документ" },
         ]}
       />
@@ -516,14 +421,14 @@ export default function CreateSalePage() {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-800 dark:text-white">
-            Новий документ реалізації
+            Новий документ ціноутворення
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Заповніть форму для створення документа реалізації товарів
+            Заповніть форму для зміни цін на товари
           </p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" size="sm" onClick={() => navigate("/sales")}>
+          <Button variant="outline" size="sm" onClick={() => navigate("/price-setting")}>
             Скасувати
           </Button>
           <Button variant="primary" size="sm" onClick={() => setShowSaveModal(true)} disabled={saving}>
@@ -538,120 +443,59 @@ export default function CreateSalePage() {
           <h2 className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
             Основна інформація
           </h2>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-                Клієнт *
+                Фірма *
               </label>
-              {customers.length === 0 ? (
+              {firms.length === 0 ? (
                 <div className="p-3 border border-red-300 bg-red-50 rounded-lg text-red-700">
-                  ⚠️ Клієнти не завантажені. Перевірте API.
+                  ⚠️ Фірми не завантажені. Перевірте API.
                 </div>
               ) : (
                 <Select
-                  options={customers.map(customer => ({
-                    value: customer.id.toString(),
-                    label: customer.name
+                  options={firms.map(firm => ({
+                    value: firm.id.toString(),
+                    label: `${firm.name} (${firm.company})`
                   }))}
-                  placeholder="Оберіть клієнта"
-                  onChange={handleCustomerChange}
+                  placeholder="Оберіть фірму"
+                  onChange={handleFirmSelectChange}
                   defaultValue=""
                 />
               )}
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-                Контракт *
-              </label>
-              {!form.customer ? (
-                <div className="p-3 border border-gray-300 bg-gray-50 rounded-lg text-gray-500">
-                  Спочатку оберіть клієнта
-                </div>
-              ) : loadingContracts ? (
-                <div className="p-3 border border-blue-300 bg-blue-50 rounded-lg text-blue-700 flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                  Завантаження договорів...
-                </div>
-              ) : contracts.length === 0 ? (
-                <div className="p-3 border border-red-300 bg-red-50 rounded-lg text-red-700">
-                  ⚠️ Договори для цього клієнта не знайдені
-                </div>
-              ) : (
-                <Select
-                  options={contracts.map(contract => ({
-                    value: contract.id.toString(),
-                    label: `${contract.name} (${contract.contract_type}) - ${contract.status}`
-                  }))}
-                  placeholder="Оберіть контракт"
-                  onChange={handleContractChange}
-                  defaultValue=""
-                />
-              )}
+              <Input
+                label="Дата документа *"
+                name="date"
+                type="date"
+                value={form.date}
+                onChange={handleInputChange}
+              />
             </div>
 
-            <div>
+            <div className="md:col-span-3">
               <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-                Склад *
+                Опис документа
               </label>
-              {warehouses.length === 0 ? (
-                <div className="p-3 border border-red-300 bg-red-50 rounded-lg text-red-700">
-                  ⚠️ Склади не завантажені. Перевірте API.
-                </div>
-              ) : (
-                <Select
-                  options={warehouses.map(warehouse => ({
-                    value: warehouse.id.toString(),
-                    label: warehouse.name
-                  }))}
-                  placeholder="Оберіть склад"
-                  onChange={handleWarehouseChange}
-                  defaultValue=""
-                />
-              )}
+              <textarea
+                name="description"
+                value={form.description}
+                onChange={handleInputChange}
+                placeholder="Опис причин зміни цін..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                rows={3}
+              />
             </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-                Торгова точка *
-              </label>
-              {tradePoints.length === 0 ? (
-                <div className="p-3 border border-red-300 bg-red-50 rounded-lg text-red-700">
-                  ⚠️ Торгові точки не завантажені. Перевірте API.
-                </div>
-              ) : (
-                <Select
-                  options={tradePoints.map(tradePoint => ({
-                    value: tradePoint.id.toString(),
-                    label: tradePoint.name
-                  }))}
-                  placeholder="Оберіть торгову точку"
-                  onChange={handleTradePointChange}
-                  defaultValue=""
-                />
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="auto_payment"
-              checked={form.auto_payment}
-              onChange={(e) => handleAutoPaymentChange(e.target.checked)}
-              className="rounded border-gray-300"
-            />
-            <label htmlFor="auto_payment" className="text-sm text-gray-700 dark:text-white">
-              Автоматична оплата
-            </label>
           </div>
         </div>
 
-        {/* Товари */}
+        {/* Товари та ціни */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-800 dark:text-white">
-              Позиції документа
+              Зміна цін на товари
             </h2>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={openMultiProductModal}>
@@ -671,16 +515,19 @@ export default function CreateSalePage() {
                     Товар *
                   </TableCell>
                   <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                    Кількість
+                    Стара ціна (₴)
                   </TableCell>
                   <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                    Одиниця виміру *
+                    Нова ціна (₴) *
                   </TableCell>
                   <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                    Ціна
+                    Зміна
                   </TableCell>
                   <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                    Сума
+                    Тип зміни
+                  </TableCell>
+                  <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
+                    Причина зміни *
                   </TableCell>
                   <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
                     Дії
@@ -719,36 +566,62 @@ export default function CreateSalePage() {
                     <TableCell className="px-4 py-3">
                       <Input
                         type="number"
-                        value={item.quantity.toString()}
-                        onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
-                        className="w-24"
-                      />
-                    </TableCell>
-                    <TableCell className="px-4 py-3">
-                      {units.length === 0 ? (
-                        <div className="text-sm text-red-600">Одиниці не завантажені</div>
-                      ) : (
-                        <Select
-                          options={units.map(unit => ({
-                            value: unit.id.toString(),
-                            label: unit.name
-                          }))}
-                          placeholder="Оберіть"
-                          onChange={(value) => handleItemChange(index, 'unit', value)}
-                          defaultValue={item.unit?.toString() || ""}
-                        />
-                      )}
-                    </TableCell>
-                    <TableCell className="px-4 py-3">
-                      <Input
-                        type="number"
-                        value={(item.price || 0).toString()}
-                        onChange={(e) => handleItemChange(index, 'price', e.target.value)}
+                        value={item.old_price.toString()}
+                        onChange={(e) => handleItemChange(index, 'old_price', e.target.value)}
                         className="w-28"
                       />
                     </TableCell>
                     <TableCell className="px-4 py-3">
-                      <span className="text-sm font-medium">{formatPrice(item.total || 0)}</span>
+                      <Input
+                        type="number"
+                        value={item.new_price.toString()}
+                        onChange={(e) => handleItemChange(index, 'new_price', e.target.value)}
+                        className="w-28"
+                      />
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      <div className="flex flex-col items-center">
+                        <span className={`text-sm font-bold px-2 py-1 rounded ${
+                          item.new_price > item.old_price 
+                            ? 'text-red-600 bg-red-50' 
+                            : item.new_price < item.old_price 
+                              ? 'text-green-600 bg-green-50' 
+                              : 'text-gray-600 bg-gray-50'
+                        }`}>
+                          {item.old_price > 0 ? calculatePriceChange(item.old_price, item.new_price) : 'N/A'}
+                        </span>
+                        <span className={`text-xs mt-1 ${
+                          item.new_price > item.old_price 
+                            ? 'text-red-500' 
+                            : item.new_price < item.old_price 
+                              ? 'text-green-500' 
+                              : 'text-gray-500'
+                        }`}>
+                          {item.new_price !== item.old_price ? formatPrice(Math.abs(item.new_price - item.old_price)) : ''}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      <select
+                        value={item.price_change_type}
+                        onChange={(e) => handleItemChange(index, 'price_change_type', e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      >
+                        {priceChangeTypeOptions.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      <Input
+                        type="text"
+                        value={item.reason}
+                        onChange={(e) => handleItemChange(index, 'reason', e.target.value)}
+                        placeholder="Причина зміни ціни"
+                        className="w-48"
+                      />
                     </TableCell>
                     <TableCell className="px-4 py-3">
                       <Button
@@ -773,11 +646,32 @@ export default function CreateSalePage() {
                 <span className="text-gray-600 dark:text-gray-400">Кількість позицій:</span>
                 <span className="font-medium">{form.items.length}</span>
               </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600 dark:text-gray-400">Підвищення цін:</span>
+                <span className="font-medium text-red-600">
+                  {form.items.filter(item => item.new_price > item.old_price).length}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600 dark:text-gray-400">Зниження цін:</span>
+                <span className="font-medium text-green-600">
+                  {form.items.filter(item => item.new_price < item.old_price).length}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600 dark:text-gray-400">Без змін:</span>
+                <span className="font-medium text-gray-600">
+                  {form.items.filter(item => item.new_price === item.old_price).length}
+                </span>
+              </div>
               <div className="border-t border-gray-300 pt-2 dark:border-white/20">
                 <div className="flex justify-between">
-                  <span className="font-semibold text-gray-800 dark:text-white">Загальна сума:</span>
-                  <span className="text-xl font-bold text-green-600 dark:text-green-400">
-                    {formatPrice(getTotalAmount())}
+                  <span className="font-semibold text-gray-800 dark:text-white">Середня зміна:</span>
+                  <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                    {form.items.length > 0 && form.items.every(item => item.old_price > 0) 
+                      ? `${(form.items.reduce((sum, item) => sum + ((item.new_price - item.old_price) / item.old_price * 100), 0) / form.items.length).toFixed(1)}%`
+                      : 'N/A'
+                    }
                   </span>
                 </div>
               </div>
@@ -796,14 +690,14 @@ export default function CreateSalePage() {
         onProductSelect={handleProductSelect}
         onMultipleProductsSelect={handleMultipleProductsSelect}
         multiSelect={currentItemIndex === -1}
-        selectedWarehouse={form.warehouse}
+        selectedWarehouse={undefined} // Для ціноутворення склад не потрібен
       />
 
       {/* Модальне вікно підтвердження */}
       <ConfirmModal
         isOpen={showSaveModal}
-        title="Зберегти документ?"
-        description="Ви впевнені, що хочете створити цей документ реалізації?"
+        title="Зберегти документ ціноутворення?"
+        description="Ви впевнені, що хочете створити цей документ зміни цін? Документ буде збережено як чернетка."
         onConfirm={() => {
           setShowSaveModal(false);
           handleSave();

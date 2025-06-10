@@ -127,8 +127,8 @@ export default function SaleDetailPage() {
           quantity: parseFloat(item.quantity),
           unit: item.unit,
           unit_name: "Одиниця не завантажена", // Потрібно окремо завантажити
-          price: 0, // Не передається в API, розрахуємо з загальної суми
-          total: 0  // Розрахуємо окремо
+          price: parseFloat(item.price) || 0,
+          total: parseFloat(item.quantity) * (parseFloat(item.price) || 0)
         }))
       };
       
@@ -164,10 +164,10 @@ export default function SaleDetailPage() {
         }
       }
 
-      // Завантажуємо інформацію про договір
-      if (doc.contract) {
+      // Завантажуємо інформацію про договір - ВИПРАВЛЕНО: використовуємо by-client
+      if (doc.contract && doc.customer) {
         try {
-          const contractResponse = await axios.get(`contracts/by-customer/?id=${doc.customer}`);
+          const contractResponse = await axios.get(`contracts/by-client/?id=${doc.customer}`);
           const contract = contractResponse.data.find((c: any) => c.id === doc.contract);
           
           if (contract) {
@@ -197,6 +197,21 @@ export default function SaleDetailPage() {
         }
       }
 
+      // Завантажуємо інформацію про склад
+      if (doc.warehouse) {
+        try {
+          const warehouseResponse = await axios.get(`warehouses/${doc.warehouse}/`);
+          console.log("✅ Warehouse loaded:", warehouseResponse.data);
+          
+          setDocument(prev => prev ? {
+            ...prev,
+            warehouse_name: warehouseResponse.data.name
+          } : null);
+        } catch (error) {
+          console.log("❌ Could not load warehouse info");
+        }
+      }
+
       // Завантажуємо інформацію про товари та одиниці виміру
       try {
         const [productsResponse, unitsResponse] = await Promise.all([
@@ -218,8 +233,7 @@ export default function SaleDetailPage() {
               product_code: product?.code || "",
               product_unit: product?.unit_name || "",
               unit_name: unit?.name || `Одиниця ID: ${item.unit}`,
-              price: product?.price || 0,
-              total: item.quantity * (product?.price || 0)
+              // Ціна вже завантажена з документа
             };
           })
         } : null);
@@ -249,10 +263,12 @@ export default function SaleDetailPage() {
           await axios.post(`document/${document.id}/process/`);
           console.log("✅ Sale document processed via document/ endpoint");
         } catch (error2) {
-          console.log("❌ document/process/ failed, trying sales/");
-          // Останній варіант - можливо sales з параметром
-          await axios.get(`sales/?action=process&id=${document.id}`);
-          console.log("✅ Sale document processed via sales/ endpoint");
+          console.log("❌ document/process/ failed, trying alternative approach");
+          // Альтернативний підхід - можливо сервер має інший ендпоінт
+          await axios.patch(`document/${document.id}/`, { status: 'posted' });
+          console.log("✅ Sale document processed via patch endpoint");
+
+          console.log("✅ Sale document processed via patch endpoint");
         }
       }
       
@@ -495,6 +511,7 @@ export default function SaleDetailPage() {
                         <div className="font-medium text-gray-900 dark:text-white">
                           {item.product_name}
                         </div>
+                        <div className="text-sm text-gray-500">ID: {item.product}</div>
                       </TableCell>
                       <TableCell className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         {item.product_code || "—"}
