@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const instance = axios.create({
-  baseURL: "http://178.212.98.207:8000/api/",
+  baseURL: "https://nashsoft.r2r-company.com.ua/api/",
 });
 
 instance.interceptors.request.use((config) => {
