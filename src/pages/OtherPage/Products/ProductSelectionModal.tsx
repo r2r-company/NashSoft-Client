@@ -19,6 +19,35 @@ type Product = {
   is_active?: boolean;
 };
 
+// ✅ ДОДАЄМО ТИПИ ДЛЯ ФАСУВАННЯ
+type ProductPackaging = {
+  id: number;
+  name: string;                   
+  product: number;
+  from_unit: number;              
+  to_unit: number;                
+  factor: number;                  
+  from_unit_name: string;         
+  to_unit_name: string;          
+};
+
+type ProductWithPackaging = Product & {
+  base_unit?: {
+    name: string;
+    symbol: string;
+  };
+  packagings?: ProductPackaging[];
+};
+
+// ✅ НОВИЙ ТИП ДЛЯ РЕЗУЛЬТАТУ ВИБОРУ
+type SelectedProductWithUnit = {
+  product: Product;
+  unit_conversion_id: number | null;
+  unit_name: string;
+  unit_symbol: string;
+  factor: number;
+};
+
 type CategoryGroup = {
   id: number;
   name: string;
@@ -46,11 +75,13 @@ type AllStockItem = {
   total: number;
 };
 
+
+// ✅ ОНОВЛЮЄМО ІНТЕРФЕЙС
 interface ProductSelectionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onProductSelect: (product: Product) => void;
-  onMultipleProductsSelect?: (products: Product[]) => void;
+  onProductSelect: (selectedItem: SelectedProductWithUnit) => void;
+  onMultipleProductsSelect?: (selectedItems: SelectedProductWithUnit[]) => void;
   multiSelect?: boolean;
   selectedWarehouse?: number;
 }
@@ -284,7 +315,120 @@ function AllStockModal({
   );
 }
 
-// Компонент для отображения одного товара
+// ✅ НОВИЙ КОМПОНЕНТ ДЛЯ ВИБОРУ ФАСУВАННЯ
+function PackagingSelector({ 
+  product, 
+  selectedPackaging, 
+  onPackagingChange 
+}: {
+  product: ProductWithPackaging;
+  selectedPackaging: number | null;
+  onPackagingChange: (packagingId: number | null) => void;
+}) {
+  const [packagings, setPackagings] = useState<ProductPackaging[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    loadPackagings();
+  }, [product.id]);
+
+  const loadPackagings = async () => {
+  setLoading(true);
+  try {
+    const response = await axios.get(`product-unit-conversions/?product=${product.id}`);
+    console.log("🔥 Packagings response:", response.data);
+    
+    if (Array.isArray(response.data)) {
+      setPackagings(response.data);
+      // Устанавливаем базовую единицу по умолчанию
+      if (selectedPackaging === undefined) {
+        onPackagingChange(null);
+      }
+    } else {
+      console.warn("Unexpected response format:", response.data);
+      setPackagings([]);
+    }
+  } catch (error) {
+    console.error("❌ Error loading packagings:", error);
+    setPackagings([]);
+  } finally {
+    setLoading(false);
+  }
+};
+
+  if (loading) {
+    return (
+      <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+        Завантаження фасувань...
+      </div>
+    );
+  }
+
+  // Якщо немає фасувань, показуємо тільки базову одиницю
+  if (packagings.length === 0) {
+    return (
+      <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
+        <div className="text-xs font-medium text-green-800 dark:text-green-300">
+          Одиниця: {product.unit_name || 'шт'} (базова)
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+      >
+        {expanded ? '▼' : '▶'} Обрати фасування
+      </button>
+      
+      {expanded && (
+        <div className="mt-2 p-3 bg-gray-50 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
+          <div className="space-y-2">
+            {/* Базова одиниця */}
+            <label className="flex items-center cursor-pointer">
+              <input
+                type="radio"
+                name={`packaging-${product.id}`}
+                checked={selectedPackaging === null}
+                onChange={() => onPackagingChange(null)}
+                className="w-3 h-3 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-1 dark:bg-gray-700 dark:border-gray-600"
+              />
+              <span className="ml-2 text-xs text-gray-900 dark:text-white">
+                <span className="font-medium">{product.unit_name || 'шт'}</span>
+                <span className="text-gray-500 dark:text-gray-400 ml-1">(базова)</span>
+              </span>
+            </label>
+
+            {/* Фасування */}
+            {packagings.map((packaging) => (
+  <label key={packaging.id} className="flex items-center cursor-pointer">
+    <input
+      type="radio"
+      name={`packaging-${product.id}`}
+      checked={selectedPackaging === packaging.id}
+      onChange={() => onPackagingChange(packaging.id)}
+      className="w-3 h-3 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500"
+    />
+    <span className="ml-2 text-xs text-gray-900 dark:text-white">
+      <span className="font-medium">{packaging.name}</span>
+      <span className="text-gray-500 dark:text-gray-400 ml-1">
+        (1 {packaging.from_unit_name} = {packaging.factor} {packaging.to_unit_name})
+      </span>
+    </span>
+  </label>
+))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ✅ ОНОВЛЮЄМО КОМПОНЕНТ КАРТКИ ТОВАРУ
 function ProductCard({ 
   product, 
   searchQuery, 
@@ -292,15 +436,19 @@ function ProductCard({
   multiSelect, 
   onSelect, 
   stockQuantity,
-  onShowAllStock
+  onShowAllStock,
+  selectedPackaging,
+  onPackagingChange
 }: {
-  product: Product;
+  product: ProductWithPackaging;
   searchQuery: string;
   isSelected: boolean;
   multiSelect: boolean;
   onSelect: () => void;
   stockQuantity: number;
   onShowAllStock: () => void;
+  selectedPackaging: number | null;
+  onPackagingChange: (packagingId: number | null) => void;
 }) {
   const highlightText = (text: string, search: string) => {
     if (!search) return text;
@@ -325,11 +473,15 @@ function ProductCard({
           : 'border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600'
       }`}
       onClick={(e) => {
-        // Перевіряємо, чи клік не був по кнопці
-        if ((e.target as HTMLElement).closest('button')) {
+        // Перевіряємо, чи клік не був по кнопці або радіо
+        if ((e.target as HTMLElement).closest('button') || 
+            (e.target as HTMLElement).closest('input[type="radio"]') ||
+            (e.target as HTMLElement).closest('label')) {
           return;
         }
-        onSelect();
+        if (!multiSelect) {
+          onSelect();
+        }
       }}
     >
       <div className="flex items-start justify-between">
@@ -409,6 +561,13 @@ function ProductCard({
                   </div>
                 )}
               </div>
+
+              {/* ✅ ДОДАЄМО СЕЛЕКТОР ФАСУВАННЯ */}
+              <PackagingSelector
+                product={product}
+                selectedPackaging={selectedPackaging}
+                onPackagingChange={onPackagingChange}
+              />
             </div>
           </div>
         </div>
@@ -479,7 +638,7 @@ export default function ProductSelectionModal({
   multiSelect = false,
   selectedWarehouse
 }: ProductSelectionModalProps) {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<ProductWithPackaging[]>([]);
   const [productGroups, setProductGroups] = useState<CategoryGroup[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -488,12 +647,16 @@ export default function ProductSelectionModal({
   const [stockData, setStockData] = useState<StockData>({});
   const [showAllStockModal, setShowAllStockModal] = useState(false);
   const [selectedProductForStock, setSelectedProductForStock] = useState<{id: number, name: string} | null>(null);
+  
+  // ✅ ДОДАЄМО СТАН ДЛЯ ЗБЕРЕЖЕННЯ ВИБРАНИХ ФАСУВАНЬ
+  const [selectedPackagings, setSelectedPackagings] = useState<{[productId: number]: number | null}>({});
 
   useEffect(() => {
     if (isOpen) {
       loadData();
       loadStockData();
       setSelectedProducts(new Set());
+      setSelectedPackagings({}); // ✅ ОЧИЩАЄМО ФАСУВАННЯ ПРИ ВІДКРИТТІ
     }
   }, [isOpen, selectedWarehouse]);
 
@@ -558,259 +721,361 @@ export default function ProductSelectionModal({
   });
 
   // Функция поиска групп по ID
-  const findGroupById = (groups: CategoryGroup[], id: number): CategoryGroup | null => {
-    for (const group of groups) {
-      if (group.id === id) return group;
-      if (group.children) {
-        const found = findGroupById(group.children, id);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
+const findGroupById = (groups: CategoryGroup[], id: number): CategoryGroup | null => {
+ for (const group of groups) {
+   if (group.id === id) return group;
+   if (group.children) {
+     const found = findGroupById(group.children, id);
+     if (found) return found;
+   }
+ }
+ return null;
+};
 
-  // Конвертуємо CategoryGroup в формат для ProductCategoryTree
-  const convertedProductGroups = productGroups.map(group => ({
-    ...group,
-    parent: group.parent ?? null
-  }));
+// Конвертуємо CategoryGroup в формат для ProductCategoryTree
+const convertedProductGroups = productGroups.map(group => ({
+ ...group,
+ parent: group.parent ?? null
+}));
 
-  // Подсчет товаров в группах
-  const totalGroupsProducts = productGroups.reduce((sum, group) => sum + (group.products_count || 0), 0);
+// Подсчет товаров в группах
+const totalGroupsProducts = productGroups.reduce((sum, group) => sum + (group.products_count || 0), 0);
 
-  const handleGroupSelect = (groupId: number | null) => {
-    setSelectedGroupId(groupId);
-  };
+const handleGroupSelect = (groupId: number | null) => {
+ setSelectedGroupId(groupId);
+};
 
-  const handleProductSelect = (product: Product) => {
-    if (multiSelect) {
-      const newSelected = new Set(selectedProducts);
-      if (newSelected.has(product.id)) {
-        newSelected.delete(product.id);
-      } else {
-        newSelected.add(product.id);
-      }
-      setSelectedProducts(newSelected);
+// ✅ ОНОВЛЮЄМО ОБРОБКУ ВИБОРУ ТОВАРУ
+// ✅ ВИПРАВЛЕНА ОБРОБКА ВИБОРУ ТОВАРУ
+const handleProductSelect = async (product: ProductWithPackaging) => {
+  if (multiSelect) {
+    const newSelected = new Set(selectedProducts);
+    if (newSelected.has(product.id)) {
+      newSelected.delete(product.id);
+      const newPackagings = { ...selectedPackagings };
+      delete newPackagings[product.id];
+      setSelectedPackagings(newPackagings);
     } else {
-      onProductSelect(product);
-      onClose();
+      newSelected.add(product.id);
+      setSelectedPackagings(prev => ({
+        ...prev,
+        [product.id]: null
+      }));
     }
-  };
+    setSelectedProducts(newSelected);
+  } else {
+    const selectedPackaging = selectedPackagings[product.id] || null;
+    
+    let unitName = product.unit_name || 'шт';
+    let unitSymbol = product.unit_name || 'шт';
+    let factor = 1;
 
-  const handleConfirmSelection = () => {
-    if (multiSelect && onMultipleProductsSelect) {
-      const selectedProductsList = products.filter(product => 
-        selectedProducts.has(product.id)
-      );
-      onMultipleProductsSelect(selectedProductsList);
-    }
-    onClose();
-  };
-
-  const resetFilters = () => {
-    setSelectedGroupId(null);
-    setSearchQuery("");
-  };
-
-  const selectAllVisible = () => {
-    if (multiSelect) {
-      const newSelected = new Set(selectedProducts);
-      filteredProducts.forEach(product => {
-        newSelected.add(product.id);
-      });
-      setSelectedProducts(newSelected);
-    }
-  };
-
-  const handleShowAllStock = (product: Product) => {
-    setSelectedProductForStock({ id: product.id, name: product.name });
-    setShowAllStockModal(true);
-  };
-
-  const deselectAll = () => {
-    if (multiSelect) {
-      setSelectedProducts(new Set());
-    }
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 flex items-center justify-center p-4" style={{zIndex: 999999}}>
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-
-      {/* Modal */}
-      <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl flex flex-col border border-gray-300 dark:border-gray-600" style={{width: '95vw', height: '95vh', minWidth: '1200px', minHeight: '800px'}}>
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750 rounded-t-xl flex-shrink-0">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
-              {multiSelect ? "Вибір товарів" : "Вибір товару"}
-            </h2>
-            {multiSelect && selectedProducts.size > 0 && (
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Обрано товарів: {selectedProducts.size}
-              </p>
-            )}
-            {selectedWarehouse && getWarehouseName() && (
-              <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
-                📦 Склад: {getWarehouseName()}
-              </p>
-            )}
-            {!selectedWarehouse && (
-              <p className="text-sm text-orange-600 dark:text-orange-400 mt-1">
-                ⚠️ Склад не обрано - залишки не відображаються
-              </p>
-            )}
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-2xl font-bold"
-          >
-            ×
-          </button>
-        </div>
-
-        {/* Search */}
-        <div className="p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
-          <div className="flex gap-4 items-center">
-            <div className="flex-1">
-              <Input
-                type="text"
-                placeholder="Пошук товару по назві, коду або групі..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            <Button variant="outline" onClick={resetFilters} size="sm">
-              Скинути фільтри
-            </Button>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setSelectedProductForStock({ id: 0, name: "Всі товари" });
-                setShowAllStockModal(true);
-              }} 
-              size="sm"
-            >
-              📊 Всі залишки
-            </Button>
-            {multiSelect && (
-              <>
-                <Button variant="outline" onClick={selectAllVisible} size="sm">
-                  Обрати видимі
-                </Button>
-                <Button variant="outline" onClick={deselectAll} size="sm">
-                  Скинути вибір
-                </Button>
-              </>
-            )}
-          </div>
+    // ✅ ВИПРАВЛЕННЯ: Отримуємо фасування з стану компонента
+    if (selectedPackaging !== null) {
+      // Потрібно завантажити фасування для цього товару
+      try {
+        const response = await axios.get(`product-unit-conversions/?product=${product.id}`);
+        const packagings = response.data || [];
+        
+        const packaging = packagings.find((p: ProductPackaging) => p.id === selectedPackaging);
+        if (packaging) {
+          unitName = packaging.to_unit_name;
+          unitSymbol = packaging.to_unit_name;
+          factor = packaging.factor;
           
-          {/* Selected group indicator */}
-          {selectedGroupId && (
-            <div className="mt-3 flex items-center gap-2">
-              <span className="text-sm text-gray-500">Обрана група:</span>
-              <span className="px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400 rounded text-sm">
-                {findGroupById(convertedProductGroups, selectedGroupId)?.name}
-              </span>
-            </div>
-          )}
-        </div>
+          console.log('🔥 Selected packaging:', packaging);
+          console.log('🔥 Factor from API:', packaging.factor);
+        }
+      } catch (error) {
+        console.error('Error loading packaging:', error);
+      }
+    }
 
-        {/* Content */}
-        <div className="flex-1 flex overflow-hidden min-h-0">
-          {/* Product Groups Tree */}
-          <div className="border-r border-gray-200 dark:border-gray-700 overflow-auto" style={{width: '300px', flexShrink: 0}}>
-            <ProductCategoryTree
-              categories={convertedProductGroups as any}
-              selectedCategoryId={selectedGroupId}
-              onCategorySelect={handleGroupSelect}
-              loading={loading}
-            />
-          </div>
+    const selectedItem: SelectedProductWithUnit = {
+      product,
+      unit_conversion_id: selectedPackaging,
+      unit_name: unitName,
+      unit_symbol: unitSymbol,
+      factor: factor
+    };
 
-          {/* Products List */}
-          <div className="flex-1 overflow-auto min-w-0">
-            <div className="p-6">
-              {loading ? (
-                <div className="flex items-center justify-center h-64">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                    <p className="text-gray-600 dark:text-gray-400">Завантаження товарів...</p>
-                  </div>
-                </div>
-              ) : filteredProducts.length === 0 ? (
-                <div className="flex items-center justify-center h-64">
-                  <div className="text-center">
-                    <div className="text-6xl mb-4">🔍</div>
-                    <h3 className="text-lg font-medium text-gray-800 dark:text-white mb-2">
-                      Товари не знайдені
-                    </h3>
-                    <p className="text-gray-600 dark:text-gray-400">
-                      {searchQuery || selectedGroupId 
-                        ? "Спробуйте змінити фільтри пошуку" 
-                        : "У цій категорії немає товарів"}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid gap-3">
-                  {filteredProducts.map((product) => (
-                    <ProductCard
-                      key={product.id}
-                      product={product}
-                      searchQuery={searchQuery}
-                      isSelected={multiSelect && selectedProducts.has(product.id)}
-                      multiSelect={multiSelect}
-                      onSelect={() => handleProductSelect(product)}
-                      stockQuantity={getProductStock(product.id)}
-                      onShowAllStock={() => handleShowAllStock(product)}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+    console.log('✅ Sending selectedItem:', selectedItem);
+    onProductSelect(selectedItem);
+    onClose();
+  }
+};
 
-        {/* Footer */}
-        <div className="flex justify-between items-center p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750 rounded-b-xl flex-shrink-0">
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Знайдено: {filteredProducts.length} з {products.length} товарів
-            {productGroups.length > 0 && ` | Груп: ${productGroups.length}`}
-            {totalGroupsProducts > 0 && ` | В групах: ${totalGroupsProducts}`}
-            {multiSelect && selectedProducts.size > 0 && ` | Обрано: ${selectedProducts.size}`}
-            {selectedWarehouse && getWarehouseName() && ` | ${getWarehouseName()}`}
-          </div>
-          <div className="flex gap-3">
-            <Button variant="outline" onClick={onClose}>
-              Скасувати
-            </Button>
-            {multiSelect && (
-              <Button 
-                variant="primary" 
-                onClick={handleConfirmSelection}
-                disabled={selectedProducts.size === 0}
-              >
-                Додати обрані ({selectedProducts.size})
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
 
-      {/* Модалка залишків по всім складам */}
-      <AllStockModal
-        isOpen={showAllStockModal}
-        onClose={() => {
-          setShowAllStockModal(false);
-          setSelectedProductForStock(null);
-        }}
-        productId={selectedProductForStock?.id || null}
-        productName={selectedProductForStock?.name || ""}
-      />
-    </div>
-  );
+
+// ✅ ДОДАЄМО ОБРОБКУ ЗМІНИ ФАСУВАННЯ
+const handlePackagingChange = (productId: number, packagingId: number | null) => {
+ setSelectedPackagings(prev => ({
+   ...prev,
+   [productId]: packagingId
+ }));
+};
+
+// ✅ ОНОВЛЮЄМО ПІДТВЕРДЖЕННЯ МНОЖЕСТВЕННОГО ВИБОРУ
+const handleConfirmSelection = async () => {
+  if (multiSelect && onMultipleProductsSelect) {
+    const selectedItems: SelectedProductWithUnit[] = [];
+    
+    for (const productId of Array.from(selectedProducts)) {
+      const product = products.find(p => p.id === productId);
+      if (!product) continue;
+      
+      const selectedPackaging = selectedPackagings[productId] || null;
+      
+      let unitName = product.unit_name || 'шт';
+      let unitSymbol = product.unit_name || 'шт';
+      let factor = 1;
+      
+      if (selectedPackaging !== null) {
+        try {
+          const response = await axios.get(`product-unit-conversions/?product=${productId}`);
+          const packagings = response.data || [];
+          
+          const packaging = packagings.find((p: ProductPackaging) => p.id === selectedPackaging);
+          if (packaging) {
+            unitName = packaging.to_unit_name;
+            unitSymbol = packaging.to_unit_name;
+            factor = packaging.factor;
+          }
+        } catch (error) {
+          console.error('Error loading packaging info:', error);
+        }
+      }
+      
+      selectedItems.push({
+        product,
+        unit_conversion_id: selectedPackaging,
+        unit_name: unitName,
+        unit_symbol: unitSymbol,
+        factor: factor
+      });
+    }
+    
+    console.log('✅ Selected items for multiple selection:', selectedItems);
+    onMultipleProductsSelect(selectedItems);
+  }
+  onClose();
+};
+
+const resetFilters = () => {
+ setSelectedGroupId(null);
+ setSearchQuery("");
+};
+
+const selectAllVisible = () => {
+ if (multiSelect) {
+   const newSelected = new Set(selectedProducts);
+   const newPackagings = { ...selectedPackagings };
+   
+   filteredProducts.forEach(product => {
+     newSelected.add(product.id);
+     // Встановлюємо базову одиницю за замовчуванням для нових товарів
+     if (!(product.id in newPackagings)) {
+       newPackagings[product.id] = null;
+     }
+   });
+   
+   setSelectedProducts(newSelected);
+   setSelectedPackagings(newPackagings);
+ }
+};
+
+const handleShowAllStock = (product: ProductWithPackaging) => {
+ setSelectedProductForStock({ id: product.id, name: product.name });
+ setShowAllStockModal(true);
+};
+
+const deselectAll = () => {
+ if (multiSelect) {
+   setSelectedProducts(new Set());
+   setSelectedPackagings({});
+ }
+};
+
+if (!isOpen) return null;
+
+return (
+ <div className="fixed inset-0 flex items-center justify-center p-4" style={{zIndex: 999999}}>
+   {/* Backdrop */}
+   <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+
+   {/* Modal */}
+   <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl flex flex-col border border-gray-300 dark:border-gray-600" style={{width: '95vw', height: '95vh', minWidth: '1200px', minHeight: '800px'}}>
+     {/* Header */}
+     <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750 rounded-t-xl flex-shrink-0">
+       <div>
+         <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
+           {multiSelect ? "Вибір товарів з фасуванням" : "Вибір товару з фасуванням"}
+         </h2>
+         {multiSelect && selectedProducts.size > 0 && (
+           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+             Обрано товарів: {selectedProducts.size}
+           </p>
+         )}
+         {selectedWarehouse && getWarehouseName() && (
+           <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
+             📦 Склад: {getWarehouseName()}
+           </p>
+         )}
+         {!selectedWarehouse && (
+           <p className="text-sm text-orange-600 dark:text-orange-400 mt-1">
+             ⚠️ Склад не обрано - залишки не відображаються
+           </p>
+         )}
+       </div>
+       <button
+         onClick={onClose}
+         className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-2xl font-bold"
+       >
+         ×
+       </button>
+     </div>
+
+     {/* Search */}
+     <div className="p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
+       <div className="flex gap-4 items-center">
+         <div className="flex-1">
+           <Input
+             type="text"
+             placeholder="Пошук товару по назві, коду або групі..."
+             value={searchQuery}
+             onChange={(e) => setSearchQuery(e.target.value)}
+           />
+         </div>
+         <Button variant="outline" onClick={resetFilters} size="sm">
+           Скинути фільтри
+         </Button>
+         <Button 
+           variant="outline" 
+           onClick={() => {
+             setSelectedProductForStock({ id: 0, name: "Всі товари" });
+             setShowAllStockModal(true);
+           }} 
+           size="sm"
+         >
+           📊 Всі залишки
+         </Button>
+         {multiSelect && (
+           <>
+             <Button variant="outline" onClick={selectAllVisible} size="sm">
+               Обрати видимі
+             </Button>
+             <Button variant="outline" onClick={deselectAll} size="sm">
+               Скинути вибір
+             </Button>
+           </>
+         )}
+       </div>
+       
+       {/* Selected group indicator */}
+       {selectedGroupId && (
+         <div className="mt-3 flex items-center gap-2">
+           <span className="text-sm text-gray-500">Обрана група:</span>
+           <span className="px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400 rounded text-sm">
+             {findGroupById(convertedProductGroups, selectedGroupId)?.name}
+           </span>
+         </div>
+       )}
+     </div>
+
+     {/* Content */}
+     <div className="flex-1 flex overflow-hidden min-h-0">
+       {/* Product Groups Tree */}
+       <div className="border-r border-gray-200 dark:border-gray-700 overflow-auto" style={{width: '300px', flexShrink: 0}}>
+         <ProductCategoryTree
+           categories={convertedProductGroups as any}
+           selectedCategoryId={selectedGroupId}
+           onCategorySelect={handleGroupSelect}
+           loading={loading}
+         />
+       </div>
+
+       {/* Products List */}
+       <div className="flex-1 overflow-auto min-w-0">
+         <div className="p-6">
+           {loading ? (
+             <div className="flex items-center justify-center h-64">
+               <div className="text-center">
+                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                 <p className="text-gray-600 dark:text-gray-400">Завантаження товарів...</p>
+               </div>
+             </div>
+           ) : filteredProducts.length === 0 ? (
+             <div className="flex items-center justify-center h-64">
+               <div className="text-center">
+                 <div className="text-6xl mb-4">🔍</div>
+                 <h3 className="text-lg font-medium text-gray-800 dark:text-white mb-2">
+                   Товари не знайдені
+                 </h3>
+                 <p className="text-gray-600 dark:text-gray-400">
+                   {searchQuery || selectedGroupId 
+                     ? "Спробуйте змінити фільтри пошуку" 
+                     : "У цій категорії немає товарів"}
+                 </p>
+               </div>
+             </div>
+           ) : (
+             <div className="grid gap-3">
+               {filteredProducts.map((product) => (
+                 <ProductCard
+                   key={product.id}
+                   product={product}
+                   searchQuery={searchQuery}
+                   isSelected={multiSelect && selectedProducts.has(product.id)}
+                   multiSelect={multiSelect}
+                   onSelect={() => handleProductSelect(product)}
+                   stockQuantity={getProductStock(product.id)}
+                   onShowAllStock={() => handleShowAllStock(product)}
+                   selectedPackaging={selectedPackagings[product.id] || null}
+                   onPackagingChange={(packagingId) => handlePackagingChange(product.id, packagingId)}
+                 />
+               ))}
+             </div>
+           )}
+         </div>
+       </div>
+     </div>
+
+     {/* Footer */}
+     <div className="flex justify-between items-center p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750 rounded-b-xl flex-shrink-0">
+       <div className="text-sm text-gray-500 dark:text-gray-400">
+         Знайдено: {filteredProducts.length} з {products.length} товарів
+         {productGroups.length > 0 && ` | Груп: ${productGroups.length}`}
+         {totalGroupsProducts > 0 && ` | В групах: ${totalGroupsProducts}`}
+         {multiSelect && selectedProducts.size > 0 && ` | Обрано: ${selectedProducts.size}`}
+         {selectedWarehouse && getWarehouseName() && ` | ${getWarehouseName()}`}
+       </div>
+       <div className="flex gap-3">
+         <Button variant="outline" onClick={onClose}>
+           Скасувати
+         </Button>
+         {multiSelect && (
+           <Button 
+             variant="primary" 
+             onClick={handleConfirmSelection}
+             disabled={selectedProducts.size === 0}
+           >
+             Додати обрані ({selectedProducts.size})
+           </Button>
+         )}
+       </div>
+     </div>
+   </div>
+
+   {/* Модалка залишків по всім складам */}
+   <AllStockModal
+     isOpen={showAllStockModal}
+     onClose={() => {
+       setShowAllStockModal(false);
+       setSelectedProductForStock(null);
+     }}
+     productId={selectedProductForStock?.id || null}
+     productName={selectedProductForStock?.name || ""}
+   />
+ </div>
+);
 }

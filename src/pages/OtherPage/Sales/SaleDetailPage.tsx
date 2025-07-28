@@ -49,6 +49,10 @@ type SaleItem = {
   unit: number;
   unit_name: string;
   price: number;
+  vat_percent: number;
+  vat_amount: number;
+  price_without_vat: number;
+  price_with_vat: number;
   total: number;
 };
 
@@ -84,206 +88,205 @@ export default function SaleDetailPage() {
   }, [id]);
 
   const loadDocument = async (documentId: number) => {
+  try {
+    setLoading(true);
+    console.log(`Loading sale document ${documentId}...`);
+    
+    // ✅ ЗАВАНТАЖУЄМО ДОКУМЕНТ:
+    const response = await axios.get(`document/${documentId}/`);
+    console.log("✅ Sale document loaded:", response.data);
+    
+    // ✅ ЗАВАНТАЖУЄМО СПИСОК БЕЗПЕЧНО:
+    let documentFromList = null;
     try {
-      setLoading(true);
-      console.log(`Loading sale document ${documentId}...`);
-      
-      // Завантажуємо документ з правильного ендпоінту
-      const response = await axios.get(`document/${documentId}/`);
-      console.log("✅ Sale document loaded:", response.data);
-      
-      // Одночасно завантажуємо список документів щоб отримати додаткову інформацію
       const listResponse = await axios.get("documents/?type=sale");
-      const documentFromList = listResponse.data.find((doc: any) => doc.id === documentId);
+      console.log("✅ List response:", listResponse.data);
       
-      // Комбінуємо дані з деталей та списку
-      const combinedDocument = {
-        id: documentId,
-        doc_type: response.data.doc_type,
-        doc_number: documentFromList?.doc_number || `DOC-${documentId}`,
-        date: documentFromList?.date || new Date().toISOString(),
-        company: response.data.company,
-        company_name: documentFromList?.company_name || "Компанія не завантажена",
-        firm: response.data.firm,
-        firm_name: documentFromList?.firm_name || "Фірма не завантажена",
-        warehouse: response.data.warehouse,
-        warehouse_name: documentFromList?.warehouse_name || "Склад не завантажений",
-        trade_point: response.data.trade_point,
-        trade_point_name: documentFromList?.trade_point_name || "Торгова точка не завантажена",
-        customer: response.data.customer,
-        customer_name: documentFromList?.customer_name || "Клієнт не завантажений",
-        contract: response.data.contract,
-        contract_name: "Договір не завантажений", // Потрібно окремо завантажити
-        auto_payment: response.data.auto_payment,
-        status: documentFromList?.status || "draft",
-        created_at: documentFromList?.date || new Date().toISOString(),
-        updated_at: documentFromList?.date || new Date().toISOString(),
-        items: response.data.items.map((item: any) => ({
-          id: item.id,
-          product: item.product,
-          product_name: "Товар не завантажений", // Потрібно окремо завантажити
-          product_code: "",
-          product_unit: "",
-          quantity: parseFloat(item.quantity),
-          unit: item.unit,
-          unit_name: "Одиниця не завантажена", // Потрібно окремо завантажити
-          price: parseFloat(item.price) || 0,
-          total: parseFloat(item.quantity) * (parseFloat(item.price) || 0)
-        }))
-      };
+      let documents = [];
+      if (listResponse.data && listResponse.data.data) {
+        documents = listResponse.data.data;
+      } else if (Array.isArray(listResponse.data)) {
+        documents = listResponse.data;
+      }
       
-      setDocument(combinedDocument);
-      
-      // Завантажуємо додаткову інформацію про клієнта, договір, товари та одиниці виміру
-      loadAdditionalInfo(combinedDocument);
-      
-    } catch (error) {
-      console.error("❌ Error loading sale document:", error);
-      toast.error("Помилка завантаження документа реалізації");
-      navigate("/sales");
-    } finally {
-      setLoading(false);
+      documentFromList = documents.find((doc: any) => doc.id === documentId);
+    } catch (listError) {
+      console.log("❌ Could not load document list, using defaults");
     }
-  };
-
+    
+    // ✅ КОМБІНУЄМО ДАНІ:
+    const combinedDocument = {
+      id: documentId,
+      doc_type: response.data.doc_type || "sale",
+      doc_number: documentFromList?.doc_number || `SALE-${documentId}`,
+      date: documentFromList?.date || new Date().toISOString(),
+      company: response.data.company,
+      company_name: documentFromList?.company_name || "Компанія не завантажена",
+      firm: response.data.firm,
+      firm_name: documentFromList?.firm_name || "Фірма не завантажена",
+      warehouse: response.data.warehouse,
+      warehouse_name: documentFromList?.warehouse_name || "Склад не завантажений",
+      trade_point: response.data.trade_point,
+      trade_point_name: "Торгова точка не завантажена",
+      customer: response.data.customer,
+      customer_name: documentFromList?.customer_name || "Клієнт не завантажений",
+      contract: response.data.contract,
+      contract_name: "Договір не завантажений",
+      auto_payment: response.data.auto_payment || false,
+      status: documentFromList?.status || "draft",
+      created_at: documentFromList?.date || new Date().toISOString(),
+      updated_at: documentFromList?.date || new Date().toISOString(),
+      items: (response.data.items || []).map((item: any) => ({
+        id: item.id,
+        product: item.product,
+        product_name: "Товар не завантажений",
+        product_code: "",
+        product_unit: "",
+        quantity: parseFloat(item.quantity || 0),
+        unit: item.unit,
+        unit_name: "Одиниця не завантажена",
+        price: parseFloat(item.price || 0),
+        vat_percent: parseFloat(item.vat_percent || 0),
+        vat_amount: parseFloat(item.vat_amount || 0),
+        price_without_vat: parseFloat(item.price_without_vat || item.price || 0),
+        price_with_vat: parseFloat(item.price_with_vat || item.price || 0),
+        total: parseFloat(item.quantity || 0) * parseFloat(item.price || 0)
+      }))
+    };
+    
+    setDocument(combinedDocument);
+    loadAdditionalInfo(combinedDocument);
+    
+  } catch (error) {
+    console.error("❌ Error loading sale document:", error);
+    toast.error("Помилка завантаження документа реалізації");
+    navigate("/sales");
+  } finally {
+    setLoading(false);
+  }
+};
   const loadAdditionalInfo = async (doc: any) => {
-    try {
-      // Завантажуємо інформацію про клієнта
-      if (doc.customer) {
-        try {
-          const customerResponse = await axios.get(`customers/${doc.customer}/`);
-          console.log("✅ Customer loaded:", customerResponse.data);
-          
-          // Оновлюємо документ з інформацією про клієнта
-          setDocument(prev => prev ? {
-            ...prev,
-            customer_name: customerResponse.data.name
-          } : null);
-        } catch (error) {
-          console.log("❌ Could not load customer info");
-        }
-      }
-
-      // Завантажуємо інформацію про договір - ВИПРАВЛЕНО: використовуємо by-client
-      if (doc.contract && doc.customer) {
-        try {
-          const contractResponse = await axios.get(`contracts/by-client/?id=${doc.customer}`);
-          const contract = contractResponse.data.find((c: any) => c.id === doc.contract);
-          
-          if (contract) {
-            console.log("✅ Contract loaded:", contract);
-            setDocument(prev => prev ? {
-              ...prev,
-              contract_name: contract.name
-            } : null);
-          }
-        } catch (error) {
-          console.log("❌ Could not load contract info");
-        }
-      }
-
-      // Завантажуємо інформацію про торгову точку
-      if (doc.trade_point) {
-        try {
-          const tradePointResponse = await axios.get(`trade-points/${doc.trade_point}/`);
-          console.log("✅ Trade point loaded:", tradePointResponse.data);
-          
-          setDocument(prev => prev ? {
-            ...prev,
-            trade_point_name: tradePointResponse.data.name
-          } : null);
-        } catch (error) {
-          console.log("❌ Could not load trade point info");
-        }
-      }
-
-      // Завантажуємо інформацію про склад
-      if (doc.warehouse) {
-        try {
-          const warehouseResponse = await axios.get(`warehouses/${doc.warehouse}/`);
-          console.log("✅ Warehouse loaded:", warehouseResponse.data);
-          
-          setDocument(prev => prev ? {
-            ...prev,
-            warehouse_name: warehouseResponse.data.name
-          } : null);
-        } catch (error) {
-          console.log("❌ Could not load warehouse info");
-        }
-      }
-
-      // Завантажуємо інформацію про товари та одиниці виміру
+  try {
+    // Завантажуємо інформацію про клієнта
+    if (doc.customer) {
       try {
-        const [productsResponse, unitsResponse] = await Promise.all([
-          axios.get("products/"),
-          axios.get("units/")
-        ]);
+        const customerResponse = await axios.get(`customers/${doc.customer}/`);
+        console.log("✅ Customer loaded:", customerResponse.data);
         
-        console.log("✅ Products and units loaded for mapping");
+        // Оновлюємо документ з інформацією про клієнта
+        setDocument(prev => prev ? {
+          ...prev,
+          customer_name: customerResponse.data.name
+        } : null);
+      } catch (error) {
+        console.log("❌ Could not load customer info");
+      }
+    }
+
+    // Завантажуємо інформацію про договір
+    if (doc.contract && doc.customer) {
+      try {
+        const contractResponse = await axios.get(`contracts/by-customer/?id=${doc.customer}`);
+        const contract = contractResponse.data.find((c: any) => c.id === doc.contract);
+        
+        if (contract) {
+          console.log("✅ Contract loaded:", contract);
+          setDocument(prev => prev ? {
+            ...prev,
+            contract_name: contract.name
+          } : null);
+        }
+      } catch (error) {
+        console.log("❌ Could not load contract info");
+      }
+    }
+
+    // Завантажуємо інформацію про торгову точку
+    if (doc.trade_point) {
+      try {
+        const tradePointResponse = await axios.get(`trade-points/${doc.trade_point}/`);
+        console.log("✅ Trade point loaded:", tradePointResponse.data);
         
         setDocument(prev => prev ? {
           ...prev,
-          items: prev.items.map((item: any) => {
-            const product = productsResponse.data.find((p: any) => p.id === item.product);
-            const unit = unitsResponse.data.find((u: any) => u.id === item.unit);
-            
-            return {
-              ...item,
-              product_name: product?.name || `Товар ID: ${item.product}`,
-              product_code: product?.code || "",
-              product_unit: product?.unit_name || "",
-              unit_name: unit?.name || `Одиниця ID: ${item.unit}`,
-              // Ціна вже завантажена з документа
-            };
-          })
+          trade_point_name: tradePointResponse.data.name
         } : null);
       } catch (error) {
-        console.log("❌ Could not load products or units info");
+        console.log("❌ Could not load trade point info");
       }
-      
-    } catch (error) {
-      console.log("❌ Error loading additional info:", error);
     }
-  };
 
-  const handleProcessDocument = async () => {
-    if (!document) return;
-    
-    try {
-      setProcessing(true);
-      console.log("Trying to process sale document...");
-      
-      // Пробуємо різні ендпоінти для проведення
+    // Завантажуємо інформацію про склад
+    if (doc.warehouse) {
       try {
-        await axios.post(`documents/${document.id}/process/`);
-        console.log("✅ Sale document processed via documents/ endpoint");
-      } catch (error1) {
-        console.log("❌ documents/process/ failed, trying document/");
-        try {
-          await axios.post(`document/${document.id}/process/`);
-          console.log("✅ Sale document processed via document/ endpoint");
-        } catch (error2) {
-          console.log("❌ document/process/ failed, trying alternative approach");
-          // Альтернативний підхід - можливо сервер має інший ендпоінт
-          await axios.patch(`document/${document.id}/`, { status: 'posted' });
-          console.log("✅ Sale document processed via patch endpoint");
-
-          console.log("✅ Sale document processed via patch endpoint");
-        }
+        const warehouseResponse = await axios.get(`warehouses/${doc.warehouse}/`);
+        console.log("✅ Warehouse loaded:", warehouseResponse.data);
+        
+        setDocument(prev => prev ? {
+          ...prev,
+          warehouse_name: warehouseResponse.data.name
+        } : null);
+      } catch (error) {
+        console.log("❌ Could not load warehouse info");
       }
-      
-      toast.success("Документ реалізації успішно проведено ✅");
-      
-      // Перезавантажуємо документ щоб оновити статус
-      loadDocument(document.id);
-    } catch (error) {
-      console.error("Error processing sale document:", error);
-      toast.error("Помилка при проведенні документа реалізації ❌");
-    } finally {
-      setProcessing(false);
-      setShowProcessModal(false);
     }
-  };
+
+    // Завантажуємо інформацію про товари та одиниці виміру
+    try {
+      const [productsResponse, unitsResponse] = await Promise.all([
+        axios.get("products/"),
+        axios.get("units/")
+      ]);
+      
+      console.log("✅ Products and units loaded for mapping");
+      
+      setDocument(prev => prev ? {
+        ...prev,
+        items: prev.items.map((item: any) => {
+          const product = productsResponse.data.find((p: any) => p.id === item.product);
+          const unit = unitsResponse.data.find((u: any) => u.id === item.unit);
+          
+          return {
+            ...item,
+            product_name: product?.name || `Товар ID: ${item.product}`,
+            product_code: product?.code || "",
+            product_unit: product?.unit_name || "",
+            unit_name: unit?.name || `Одиниця ID: ${item.unit}`,
+          };
+        })
+      } : null);
+    } catch (error) {
+      console.log("❌ Could not load products or units info");
+    }
+    
+  } catch (error) {
+    console.log("❌ Error loading additional info:", error);
+  }
+};
+
+const handleProcessDocument = async () => {
+  if (!document) return;
+  
+  try {
+    setProcessing(true);
+    console.log("Trying to process sale document...");
+    
+    // ✅ ВИКОРИСТАЙ ПРАВИЛЬНИЙ ЕНДПОІНТ З views.py:
+    await axios.get(`sale/?action=progress&id=${document.id}`);
+    console.log("✅ Sale document processed successfully");
+    
+    toast.success("Документ реалізації успішно проведено ✅");
+    
+    // Перезавантажуємо документ щоб оновити статус
+    loadDocument(document.id);
+  } catch (error) {
+    console.error("Error processing sale document:", error);
+    toast.error("Помилка при проведенні документа реалізації ❌");
+  } finally {
+    setProcessing(false);
+    setShowProcessModal(false);
+  }
+};
 
   const handleDeleteDocument = async () => {
     if (!document) return;

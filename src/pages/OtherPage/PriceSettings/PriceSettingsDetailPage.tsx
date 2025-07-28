@@ -101,17 +101,30 @@ export default function PriceSettingsDetailPage() {
   const [selectedTradePoint, setSelectedTradePoint] = useState<number | null>(null);
 
   useEffect(() => {
-    if (id) {
+    if (id && !isNaN(parseInt(id))) {
       loadDocument(parseInt(id));
+    } else {
+      console.error("Invalid document ID:", id);
+      toast.error("Невірний ID документа");
+      navigate("/price-settings");
     }
-  }, [id]);
+  }, [id, navigate]);
 
   const loadDocument = async (documentId: number) => {
+    if (!documentId || isNaN(documentId)) {
+      console.error("Invalid document ID provided:", documentId);
+      toast.error("Невірний ID документа");
+      navigate("/price-settings");
+      return;
+    }
+
     try {
       setLoading(true);
       console.log(`Loading price setting document ${documentId}...`);
       
-      const response = await axios.get(`price-setting-documents/${documentId}/`);
+      const response = await axios.get(`price-setting-documents/${documentId}/`)
+
+
       console.log("✅ Price setting document loaded:", response.data);
       
       setDocument(response.data);
@@ -126,50 +139,52 @@ export default function PriceSettingsDetailPage() {
   };
 
   const handleApproveDocument = async () => {
-    if (!document) return;
+  if (!document) return;
+  
+  try {
+    setProcessing(true);
+    console.log("Approving price setting document...");
     
-    try {
-      setProcessing(true);
-      console.log("Approving price setting document...");
-      
-      await axios.get(`price-setting-document-action/?action=approve&id=${document.doc_number}`);
-      console.log("✅ Document approved");
-      
-      toast.success("Документ ціноутворення затверджено ✅");
-      
-      // Перезавантажуємо документ щоб оновити статус
-      loadDocument(document.id);
-    } catch (error) {
-      console.error("Error approving document:", error);
-      toast.error("Помилка при затвердженні документа ❌");
-    } finally {
-      setProcessing(false);
-      setShowApproveModal(false);
-    }
-  };
+    // ✅ ВИПРАВЛЕНИЙ ENDPOINT:
+    await axios.get(`price-setting-document-action/?id=${document.id}&action=approve`);
+    console.log("✅ Document approved");
+    
+    toast.success("Документ ціноутворення затверджено ✅");
+    
+    // Перезавантажуємо документ щоб оновити статус
+    loadDocument(document.id);
+  } catch (error) {
+    console.error("Error approving document:", error);
+    toast.error("Помилка при затвердженні документа ❌");
+  } finally {
+    setProcessing(false);
+    setShowApproveModal(false);
+  }
+};
 
-  const handleUnapproveDocument = async () => {
-    if (!document) return;
+const handleUnapproveDocument = async () => {
+  if (!document) return;
+  
+  try {
+    setProcessing(true);
+    console.log("Unapproving price setting document...");
     
-    try {
-      setProcessing(true);
-      console.log("Unapproving price setting document...");
-      
-      await axios.get(`price-setting-document-action/?action=unapprove&id=${document.doc_number}`);
-      console.log("✅ Document unapproved");
-      
-      toast.success("Документ ціноутворення розпроведено");
-      
-      // Перезавантажуємо документ щоб оновити статус
-      loadDocument(document.id);
-    } catch (error) {
-      console.error("Error unapproving document:", error);
-      toast.error("Помилка при розпроведенні документа");
-    } finally {
-      setProcessing(false);
-      setShowUnapproveModal(false);
-    }
-  };
+    // ✅ ВИПРАВЛЕНИЙ ENDPOINT:
+    await axios.get(`price-setting-document-action/?id=${document.id}&action=unapprove`);
+    console.log("✅ Document unapproved");
+    
+    toast.success("Документ ціноутворення розпроведено");
+    
+    // Перезавантажуємо документ щоб оновити статус
+    loadDocument(document.id);
+  } catch (error) {
+    console.error("Error unapproving document:", error);
+    toast.error("Помилка при розпроведенні документа");
+  } finally {
+    setProcessing(false);
+    setShowUnapproveModal(false);
+  }
+};
 
   const handleDeleteDocument = async () => {
     if (!document) return;
@@ -208,9 +223,12 @@ export default function PriceSettingsDetailPage() {
     });
   };
 
-  const formatPrice = (price: number) => {
-    return `${price.toFixed(2)} ₴`;
-  };
+  const formatPrice = (price: number | string | null | undefined) => {
+  const numeric = typeof price === "string" ? parseFloat(price) : price;
+  return typeof numeric === "number" && !isNaN(numeric) 
+    ? `${numeric.toFixed(2)} ₴`
+    : "—";
+};
 
   const getStatusBadge = (status: string) => {
     const label = STATUS_LABELS[status as keyof typeof STATUS_LABELS] || status;
@@ -662,7 +680,7 @@ export default function PriceSettingsDetailPage() {
         </div>
       </div>
 
-      {/* Модальне вікно підтвердження затвердження */}
+      {/* Модальні вікна */}
       <ConfirmModal
         isOpen={showApproveModal}
         title="Затвердити документ ціноутворення?"
@@ -671,7 +689,6 @@ export default function PriceSettingsDetailPage() {
         onClose={() => setShowApproveModal(false)}
       />
 
-      {/* Модальне вікно підтвердження розпроведення */}
       <ConfirmModal
         isOpen={showUnapproveModal}
         title="Розпровести документ ціноутворення?"
@@ -680,7 +697,6 @@ export default function PriceSettingsDetailPage() {
         onClose={() => setShowUnapproveModal(false)}
       />
 
-      {/* Модальне вікно підтвердження видалення */}
       <ConfirmModal
         isOpen={showDeleteModal}
         title="Видалити документ ціноутворення?"

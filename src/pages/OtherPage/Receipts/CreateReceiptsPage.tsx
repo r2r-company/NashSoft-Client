@@ -27,10 +27,32 @@ type ReceiptForm = {
   auto_payment: boolean;
   items: ReceiptItem[];
 };
+type Company = {
+  id: number;
+  name: string;
+  tax_id?: string;
+};
 
+type Firm = {
+  id: number;
+  name: string;
+  company_name: string;
+  company_id: number;
+  is_vat: boolean; 
+  vat_type: string;
+};
 type ReceiptItem = {
   product: number | undefined;
   product_name?: string;
+  product_base_unit?: number;
+  product_base_unit_name?: string;
+  
+  // ✅ ДОДАЄМО ФАСУВАННЯ:
+  unit_conversion: number | null;
+  unit_conversion_name?: string;
+  final_unit?: number;
+  final_unit_name?: string;
+  
   quantity: number;
   price: number;
   vat_percent: number;
@@ -84,27 +106,44 @@ type Product = {
   product_group_name?: string;
 };
 
+type SelectedProductWithUnit = {
+  product: Product;
+  unit_conversion_id: number | null;
+  unit_name: string;
+  unit_symbol: string;
+  factor: number;
+};
+
+
+
 export default function CreateReceiptPage() {
   const navigate = useNavigate();
-  
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [firms, setFirms] = useState<Firm[]>([]);
   const [form, setForm] = useState<ReceiptForm>({
-    doc_type: "receipt",
-    company: 1,
-    firm: 1,
-    warehouse: undefined,
-    supplier: undefined,
-    contract: undefined,
-    auto_payment: true,
-    items: [
-      {
-        product: undefined,
-        quantity: 1,
-        price: 0,
-        vat_percent: 0,
-        total: 0
-      }
-    ]
-  });
+  doc_type: "receipt",
+  company: 0,
+  firm: 0,
+  warehouse: undefined,
+  supplier: undefined,
+  contract: undefined,
+  auto_payment: true,
+  items: [
+    {
+      product: undefined,
+      product_base_unit: undefined,
+      product_base_unit_name: "",
+      unit_conversion: null,
+      unit_conversion_name: "",
+      final_unit: undefined,
+      final_unit_name: "",
+      quantity: 1,
+      price: 0,
+      vat_percent: 0,
+      total: 0
+    }
+  ]
+});
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -115,82 +154,197 @@ export default function CreateReceiptPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadingContracts, setLoadingContracts] = useState(false);
-
+  
+  
   useEffect(() => {
     loadDictionaries();
   }, []);
 
-  const loadDictionaries = async () => {
-    try {
-      console.log("Loading data from URLs:");
-      console.log("- Suppliers:", `${axios.defaults.baseURL || ''}suppliers/`);
-      console.log("- Warehouses:", `${axios.defaults.baseURL || ''}warehouses/`);
+  // ✅ ВИДАЛИТИ ДУБЛІКАТ form setState І ЗАМІНИТИ loadDictionaries:
 
-      const requests = [
-        axios.get("suppliers/"),
-        axios.get("warehouses/")
-      ];
+const loadDictionaries = async () => {
+  try {
+    console.log("Loading dictionaries...");
 
-      const results = await Promise.allSettled(requests);
-      
-      if (results[0].status === 'fulfilled') {
-        console.log("✅ Suppliers loaded from API:", results[0].value.data);
-        setSuppliers(results[0].value.data);
-      } else {
-        console.error("❌ Error loading suppliers:", results[0].reason);
-        setSuppliers([]);
-        toast.error("Не вдалося завантажити постачальників");
-      }
+    const requests = [
+      axios.get("companies/"),  // ✅ ДОДАТИ
+      axios.get("firms/"),      // ✅ ДОДАТИ
+      axios.get("suppliers/"),
+      axios.get("warehouses/")
+    ];
 
-      if (results[1].status === 'fulfilled') {
-        console.log("✅ Warehouses loaded from API:", results[1].value.data);
-        setWarehouses(results[1].value.data);
-      } else {
-        console.error("❌ Error loading warehouses:", results[1].reason);
-        setWarehouses([]);
-        toast.error("Не вдалося завантажити склади");
-      }
-
-      setLoading(false);
-    } catch (error) {
-      console.error("Error loading dictionaries:", error);
-      toast.error("Помилка завантаження довідників");
-      setLoading(false);
+    const results = await Promise.allSettled(requests);
+    
+    // ✅ КОМПАНІЇ
+    if (results[0].status === 'fulfilled') {
+      console.log("✅ Companies loaded:", results[0].value.data);
+      setCompanies(results[0].value.data);
+    } else {
+      console.error("❌ Error loading companies:", results[0].reason);
+      setCompanies([]);
+      toast.error("Не вдалося завантажити компанії");
     }
-  };
+
+    // ✅ ФІРМИ
+    if (results[1].status === 'fulfilled') {
+      console.log("✅ Firms loaded:", results[1].value.data);
+      setFirms(results[1].value.data);
+    } else {
+      console.error("❌ Error loading firms:", results[1].reason);
+      setFirms([]);
+      toast.error("Не вдалося завантажити фірми");
+    }
+
+    // ✅ ПОСТАЧАЛЬНИКИ
+    if (results[2].status === 'fulfilled') {
+      setSuppliers(results[2].value.data);
+    }
+
+    // ✅ СКЛАДИ
+    if (results[3].status === 'fulfilled') {
+      setWarehouses(results[3].value.data);
+    }
+
+    setLoading(false);
+  } catch (error) {
+    console.error("Error loading dictionaries:", error);
+    toast.error("Помилка завантаження довідників");
+    setLoading(false);
+  }
+};
 
   const loadContractsBySupplier = async (supplierId: number) => {
-    setLoadingContracts(true);
+  setLoadingContracts(true);
+  setContracts([]);
+  
+  try {
+    console.log(`Loading contracts for supplier ${supplierId} and firm ${form.firm}...`);
+    
+    // ✅ ЗАВАНТАЖУЄМО ВСІ ДОГОВОРИ ПОСТАЧАЛЬНИКА:
+    const response = await axios.get(`contracts/by-supplier/?id=${supplierId}`);
+    console.log("✅ All contracts loaded:", response.data);
+    
+    // ✅ ФІЛЬТРУЄМО ПО ФІРМІ (ЯКЩО ПОТРІБНО):
+    let filteredContracts = response.data;
+    
+    // Якщо в договорах є поле firm_id, фільтруємо:
+    if (form.firm && response.data.length > 0 && 'firm_id' in response.data[0]) {
+      filteredContracts = response.data.filter((contract: any) => 
+        contract.firm_id === form.firm
+      );
+      console.log(`✅ Filtered contracts for firm ${form.firm}:`, filteredContracts);
+    }
+    
+    setContracts(filteredContracts);
+    
+    if (filteredContracts.length === 0) {
+      toast.error("Договори для цього постачальника і фірми не знайдені");
+    }
+    
+  } catch (error) {
+    console.error("❌ Error loading contracts:", error);
     setContracts([]);
-    
-    try {
-      console.log(`Loading contracts for supplier ${supplierId}...`);
-      const response = await axios.get(`contracts/by-supplier/?id=${supplierId}`);
-      console.log("✅ Contracts loaded:", response.data);
-      setContracts(response.data);
-    } catch (error) {
-      console.error("❌ Error loading contracts:", error);
-      setContracts([]);
-      toast.error("Не вдалося завантажити договори для цього постачальника");
-    } finally {
-      setLoadingContracts(false);
-    }
-  };
+    toast.error("Не вдалося завантажити договори");
+  } finally {
+    setLoadingContracts(false);
+  }
+};
 
-  const handleSupplierChange = (value: string) => {
-    const supplierId = parseInt(value);
-    setForm({ 
-      ...form, 
-      supplier: supplierId,
-      contract: undefined
-    });
+  // ✅ ДОДАТИ ЦІ ФУНКЦІЇ ПІСЛЯ loadContractsBySupplier:
+
+const handleCompanyChange = (value: string) => {
+  const companyId = parseInt(value);
+  setForm({ 
+    ...form, 
+    company: companyId,
+    firm: 0,
+    warehouse: undefined,
+    supplier: undefined,
+    contract: undefined,
+    items: []
+  });
+  
+  // ✅ ЗАВАНТАЖУЄМО СКЛАДИ ДЛЯ КОМПАНІЇ:
+  if (companyId) {
+    loadWarehousesByCompany(companyId);
+  } else {
+    setWarehouses([]);
+  }
+  setContracts([]);
+};
+const loadWarehousesByCompany = async (companyId: number) => {
+  try {
+    const response = await axios.get("warehouses/");
+    const filteredWarehouses = response.data.filter((w: any) => 
+      w.company_id === companyId
+    );
+    setWarehouses(filteredWarehouses);
+  } catch (error) {
+    setWarehouses([]);
+  }
+};
+const handleFirmChange = (value: string) => {
+  const firmId = parseInt(value);
+  setForm({ 
+    ...form, 
+    firm: firmId,
+    warehouse: undefined,
+    supplier: undefined,
+    contract: undefined,
+    items: []
+  });
+  
+  if (firmId) {
+    loadWarehousesByFirm(firmId);
+  } else {
+    setWarehouses([]);
+  }
+};
+
+// ✅ ФІЛЬТРОВАНІ ФІРМИ ПО КОМПАНІЇ:
+const getFilteredFirms = () => {
+  return firms.filter(firm => firm.company_id === form.company);
+};
+
+// ✅ ЗАВАНТАЖЕННЯ СКЛАДІВ ПО ФІРМІ:
+const loadWarehousesByFirm = async (firmId: number) => {
+  try {
+    const response = await axios.get("warehouses/");
+    console.log("✅ All warehouses:", response.data);
     
-    if (supplierId) {
-      loadContractsBySupplier(supplierId);
-    } else {
-      setContracts([]);
+    // ✅ ПОКИ ЩО - всі склади для компанії:
+    const filteredWarehouses = response.data.filter((w: any) => 
+      w.company_id === form.company
+    );
+    
+    console.log("✅ Filtered warehouses:", filteredWarehouses);
+    setWarehouses(filteredWarehouses);
+    
+    if (filteredWarehouses.length === 0) {
+      toast.error("Склади для цієї компанії не знайдені");
     }
-  };
+  } catch (error) {
+    console.error("❌ Error loading warehouses:", error);
+    setWarehouses([]);
+    toast.error("Не вдалося завантажити склади");
+  }
+};
+
+const handleSupplierChange = (value: string) => {
+  const supplierId = parseInt(value);
+  setForm({ 
+    ...form, 
+    supplier: supplierId,
+    contract: undefined
+  });
+  
+  // ✅ ЗАВАНТАЖУЄМО ДОГОВОРИ ТІЛЬКИ ЯКЩО Є І ПОСТАЧАЛЬНИК І ФІРМА:
+  if (supplierId && form.firm) {
+    loadContractsBySupplier(supplierId);
+  } else {
+    setContracts([]);
+  }
+};
 
   const handleWarehouseChange = (value: string) => {
     setForm({ ...form, warehouse: parseInt(value) });
@@ -234,39 +388,57 @@ export default function CreateReceiptPage() {
     setForm({ ...form, items });
   };
 
-  const handleMultipleProductsSelect = (products: Product[]) => {
-    const newItems = products.map(product => ({
-      product: product.id,
-      product_name: product.name,
-      quantity: 1,
-      price: product.price || 0,
-      vat_percent: 0,
-      total: 1 * (product.price || 0)
-    }));
+  const handleMultipleProductsSelect = (selectedItems: SelectedProductWithUnit[]) => {
+  const newItems = selectedItems.map(selectedItem => ({
+    product: selectedItem.product.id,
+    product_name: selectedItem.product.name,
+    product_base_unit: selectedItem.product.unit,
+    product_base_unit_name: selectedItem.product.unit_name,
+    
+    // ✅ ФАСУВАННЯ:
+    unit_conversion: selectedItem.unit_conversion_id,
+    unit_conversion_name: selectedItem.unit_conversion_id ? selectedItem.unit_name : "",
+    final_unit: selectedItem.product.unit,
+    final_unit_name: selectedItem.unit_name,
+    
+    quantity: 1,
+    price: selectedItem.product.price || 0,
+    vat_percent: 0,
+    total: 1 * (selectedItem.product.price || 0)
+  }));
 
-    setForm({ 
-      ...form, 
-      items: [...form.items.filter(item => item.product), ...newItems]
-    });
-    setShowProductModal(false);
-    setCurrentItemIndex(-1);
-  };
+  setForm({ 
+    ...form, 
+    items: [...form.items.filter(item => item.product), ...newItems]
+  });
+  setShowProductModal(false);
+  setCurrentItemIndex(-1);
+};
 
-  const handleProductSelect = (product: Product) => {
-    if (currentItemIndex >= 0) {
-      const items = [...form.items];
-      items[currentItemIndex] = {
-        ...items[currentItemIndex],
-        product: product.id,
-        product_name: product.name,
-        price: product.price || items[currentItemIndex].price,
-        total: items[currentItemIndex].quantity * (product.price || items[currentItemIndex].price)
-      };
-      setForm({ ...form, items });
-    }
-    setShowProductModal(false);
-    setCurrentItemIndex(-1);
-  };
+  const handleProductSelect = (selectedItem: SelectedProductWithUnit) => {
+  if (currentItemIndex >= 0) {
+    const items = [...form.items];
+    items[currentItemIndex] = {
+      ...items[currentItemIndex],
+      product: selectedItem.product.id,
+      product_name: selectedItem.product.name,
+      product_base_unit: selectedItem.product.unit,
+      product_base_unit_name: selectedItem.product.unit_name,
+      
+      // ✅ ФАСУВАННЯ:
+      unit_conversion: selectedItem.unit_conversion_id,
+      unit_conversion_name: selectedItem.unit_conversion_id ? selectedItem.unit_name : "",
+      final_unit: selectedItem.product.unit,
+      final_unit_name: selectedItem.unit_name,
+      
+      price: selectedItem.product.price || items[currentItemIndex].price,
+      total: items[currentItemIndex].quantity * (selectedItem.product.price || items[currentItemIndex].price)
+    };
+    setForm({ ...form, items });
+  }
+  setShowProductModal(false);
+  setCurrentItemIndex(-1);
+};
 
   const openProductModal = (itemIndex: number) => {
     setCurrentItemIndex(itemIndex);
@@ -279,18 +451,24 @@ export default function CreateReceiptPage() {
   };
 
   const addItem = () => {
-    const newItem: ReceiptItem = {
-      product: undefined,
-      quantity: 1,
-      price: 0,
-      vat_percent: 0,
-      total: 0
-    };
-    setForm({ 
-      ...form, 
-      items: [...form.items, newItem] 
-    });
+  const newItem: ReceiptItem = {
+    product: undefined,
+    product_base_unit: undefined,
+    product_base_unit_name: "",
+    unit_conversion: null,
+    unit_conversion_name: "",
+    final_unit: undefined,
+    final_unit_name: "",
+    quantity: 1,
+    price: 0,
+    vat_percent: 0,
+    total: 0
   };
+  setForm({ 
+    ...form, 
+    items: [...form.items, newItem] 
+  });
+};
 
   const removeItem = (index: number) => {
     if (form.items.length <= 1) {
@@ -303,6 +481,17 @@ export default function CreateReceiptPage() {
   };
 
   const validateForm = (): boolean => {
+
+    if (!form.company || !form.firm) {
+    toast.error("Оберіть компанію та фірму ❗");
+    return false;
+  }
+
+  if (!form.supplier || !form.warehouse || !form.contract) {
+    toast.error("Заповніть усі обов'язкові поля ❗");
+    return false;
+  }
+  
     if (!form.supplier || !form.warehouse || !form.contract) {
       toast.error("Заповніть усі обов'язкові поля ❗");
       return false;
@@ -359,21 +548,22 @@ export default function CreateReceiptPage() {
 
     setSaving(true);
 
-    const requestBody = {
-      doc_type: form.doc_type,
-      company: form.company,
-      firm: form.firm,
-      warehouse: form.warehouse,
-      supplier: form.supplier,
-      contract: form.contract,
-      auto_payment: form.auto_payment,
-      items: form.items.map(item => ({
-        product: item.product,
-        quantity: item.quantity,
-        price: item.price,
-        vat_percent: item.vat_percent
-      }))
-    };
+     const requestBody = {
+    doc_type: form.doc_type,
+    company: form.company,
+    firm: form.firm,
+    warehouse: form.warehouse,
+    supplier: form.supplier,
+    contract: form.contract,
+    auto_payment: form.auto_payment,
+    items: form.items.map(item => ({
+      product: item.product,
+      quantity: item.quantity,
+      price: item.price,
+      vat_percent: item.vat_percent,
+      unit_conversion: item.unit_conversion  // ✅ ДОДАТИ ФАСУВАННЯ
+    }))
+  };
 
     console.log("Sending request:", requestBody);
     console.log("Available suppliers:", suppliers.map(s => ({ id: s.id, name: s.name })));
@@ -489,97 +679,142 @@ export default function CreateReceiptPage() {
 
       <div className="grid gap-6">
         {/* Основна інформація */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
-          <h2 className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
-            Основна інформація
-          </h2>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-                Постачальник *
-              </label>
-              {suppliers.length === 0 ? (
-                <div className="p-3 border border-red-300 bg-red-50 rounded-lg text-red-700">
-                  ⚠️ Постачальники не завантажені. Перевірте API.
-                </div>
-              ) : (
-                <Select
-                  options={suppliers.map(supplier => ({
-                    value: supplier.id.toString(),
-                    label: supplier.name
-                  }))}
-                  placeholder="Оберіть постачальника"
-                  onChange={handleSupplierChange}
-                  defaultValue=""
-                />
-              )}
-            </div>
+        {/* Основна інформація */}
+<div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
+  <h2 className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
+    Основна інформація
+  </h2>
+  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+    {/* ✅ КОМПАНІЯ */}
+    <div>
+      <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
+        Компанія *
+      </label>
+      <Select
+        options={companies.map(company => ({
+          value: company.id.toString(),
+          label: company.name
+        }))}
+        placeholder="Оберіть компанію"
+        onChange={handleCompanyChange}
+        defaultValue=""
+      />
+    </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-                Контракт *
-              </label>
-              {!form.supplier ? (
-                <div className="p-3 border border-gray-300 bg-gray-50 rounded-lg text-gray-500">
-                  Спочатку оберіть постачальника
-                </div>
-              ) : loadingContracts ? (
-                <div className="p-3 border border-blue-300 bg-blue-50 rounded-lg text-blue-700 flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                  Завантаження договорів...
-                </div>
-              ) : contracts.length === 0 ? (
-                <div className="p-3 border border-red-300 bg-red-50 rounded-lg text-red-700">
-                  ⚠️ Договори для цього постачальника не знайдені
-                </div>
-              ) : (
-                <Select
-                  options={contracts.map(contract => ({
-                    value: contract.id.toString(),
-                    label: `${contract.name} (${contract.contract_type}) - ${contract.status}`
-                  }))}
-                  placeholder="Оберіть контракт"
-                  onChange={handleContractChange}
-                  defaultValue=""
-                />
-              )}
-            </div>
+    {/* ✅ ФІРМА */}
+    <div>
+      <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
+        Фірма *
+      </label>
+      <Select
+        options={getFilteredFirms().map(firm => ({
+          value: firm.id.toString(),
+          label: `${firm.name} (${firm.is_vat ? 'з ПДВ' : 'без ПДВ'})`
+        }))}
+        placeholder="Оберіть фірму"
+        onChange={handleFirmChange}
+        defaultValue=""
+      />
+    </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-                Склад *
-              </label>
-              {warehouses.length === 0 ? (
-                <div className="p-3 border border-red-300 bg-red-50 rounded-lg text-red-700">
-                  ⚠️ Склади не завантажені. Перевірте API.
-                </div>
-              ) : (
-                <Select
-                  options={warehouses.map(warehouse => ({
-                    value: warehouse.id.toString(),
-                    label: warehouse.name
-                  }))}
-                  placeholder="Оберіть склад"
-                  onChange={handleWarehouseChange}
-                  defaultValue=""
-                />
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="auto_payment"
-              checked={form.auto_payment}
-              onChange={(e) => handleAutoPaymentChange(e.target.checked)}
-              className="rounded border-gray-300"
-            />
-            <label htmlFor="auto_payment" className="text-sm text-gray-700 dark:text-white">
-              Автоматична оплата
-            </label>
-          </div>
+    {/* ✅ ПОСТАЧАЛЬНИК */}
+    <div>
+      <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
+        Постачальник *
+      </label>
+      {!form.firm ? (
+        <div className="p-3 border border-gray-300 bg-gray-50 rounded-lg text-gray-500">
+          Спочатку оберіть фірму
         </div>
+      ) : suppliers.length === 0 ? (
+        <div className="p-3 border border-red-300 bg-red-50 rounded-lg text-red-700">
+          ⚠️ Постачальники не завантажені
+        </div>
+      ) : (
+        <Select
+          options={suppliers.map(supplier => ({
+            value: supplier.id.toString(),
+            label: supplier.name
+          }))}
+          placeholder="Оберіть постачальника"
+          onChange={handleSupplierChange}
+          defaultValue=""
+        />
+      )}
+    </div>
+
+    {/* ✅ СКЛАД */}
+    <div>
+      <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
+        Склад *
+      </label>
+      {!form.firm ? (
+        <div className="p-3 border border-gray-300 bg-gray-50 rounded-lg text-gray-500">
+          Спочатку оберіть фірму
+        </div>
+      ) : warehouses.length === 0 ? (
+        <div className="p-3 border border-red-300 bg-red-50 rounded-lg text-red-700">
+          ⚠️ Склади для цієї фірми не знайдені
+        </div>
+      ) : (
+        <Select
+          options={warehouses.map(warehouse => ({
+            value: warehouse.id.toString(),
+            label: warehouse.name
+          }))}
+          placeholder="Оберіть склад"
+          onChange={handleWarehouseChange}
+          defaultValue=""
+        />
+      )}
+    </div>
+
+    {/* ✅ ДОГОВІР */}
+    <div>
+  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
+    Контракт *
+  </label>
+  {!form.supplier ? (
+    <div className="p-3 border border-gray-300 bg-gray-50 rounded-lg text-gray-500">
+      Спочатку оберіть постачальника
+    </div>
+  ) : loadingContracts ? (
+    <div className="p-3 border border-blue-300 bg-blue-50 rounded-lg text-blue-700 flex items-center gap-2">
+      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+      Завантаження договорів...
+    </div>
+  ) : contracts.length === 0 ? (
+    <div className="p-3 border border-red-300 bg-red-50 rounded-lg text-red-700">
+      ⚠️ Договори для цього постачальника не знайдені
+    </div>
+  ) : (
+    <Select
+      options={contracts.map(contract => ({
+        value: contract.id.toString(),
+        label: `${contract.name} (${contract.contract_type}) - ${contract.status}`
+      }))}
+      placeholder="Оберіть контракт"
+      onChange={handleContractChange}
+      defaultValue=""
+    />
+  )}
+</div>
+  </div>
+  
+  {/* Автоматична оплата */}
+  <div className="mt-4 flex items-center gap-2">
+    <input
+      type="checkbox"
+      id="auto_payment"
+      checked={form.auto_payment}
+      onChange={(e) => handleAutoPaymentChange(e.target.checked)}
+      className="rounded border-gray-300"
+    />
+    <label htmlFor="auto_payment" className="text-sm text-gray-700 dark:text-white">
+      Автоматична оплата
+    </label>
+  </div>
+</div>
 
         {/* Товари */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
@@ -600,27 +835,30 @@ export default function CreateReceiptPage() {
           <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-white/10">
             <Table>
               <TableHeader>
-                <tr className="border-b border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5">
-                  <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                    Товар *
-                  </TableCell>
-                  <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                    Кількість
-                  </TableCell>
-                  <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                    Ціна
-                  </TableCell>
-                  <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                    ПДВ (%)
-                  </TableCell>
-                  <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                    Сума
-                  </TableCell>
-                  <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                    Дії
-                  </TableCell>
-                </tr>
-              </TableHeader>
+  <tr className="border-b border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5">
+    <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
+      Товар *
+    </TableCell>
+    <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
+      Одиниця
+    </TableCell>
+    <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
+      Кількість
+    </TableCell>
+    <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
+      Ціна
+    </TableCell>
+    <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
+      ПДВ (%)
+    </TableCell>
+    <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
+      Сума
+    </TableCell>
+    <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
+      Дії
+    </TableCell>
+  </tr>
+</TableHeader>
 
               <TableBody>
                 {form.items.map((item, index) => (
@@ -650,6 +888,18 @@ export default function CreateReceiptPage() {
                         </Button>
                       </div>
                     </TableCell>
+                    <TableCell className="px-4 py-3">
+  <div className="text-center">
+    <span className="text-sm">
+      {item.final_unit_name || item.product_base_unit_name || "—"}
+    </span>
+    {item.unit_conversion_name && (
+      <div className="text-xs text-blue-600 mt-1">
+        {item.unit_conversion_name}
+      </div>
+    )}
+  </div>
+</TableCell>
                     <TableCell className="px-4 py-3">
                       <Input
                         type="number"

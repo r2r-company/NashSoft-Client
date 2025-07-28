@@ -22,8 +22,10 @@ type Sale = {
   company_name: string;
   firm_name: string;
   warehouse_name: string;
-  trade_point_name?: string;
+  customer_id?: number;        // ✅ ДОДАТИ
   customer_name?: string;
+  trade_point_id?: number;     // ✅ ДОДАТИ
+  trade_point_name?: string;
   status: string;
 };
 
@@ -82,22 +84,35 @@ export default function Sales() {
   }, [search, filters]);
 
   const loadSales = async () => {
-    try {
-      setLoading(true);
-      console.log("Loading sale documents...");
-      
-      // Використовуємо API ендпоінт для документів реалізації
-      const response = await axios.get("documents/?type=sale");
-      console.log("✅ Sale documents loaded:", response.data);
-      setData(response.data);
-    } catch (error) {
-      console.error("❌ Error loading sale documents:", error);
-      toast.error("Помилка завантаження документів реалізації");
-      setData([]);
-    } finally {
-      setLoading(false);
+  try {
+    setLoading(true);
+    console.log("Loading sale documents...");
+    
+    const response = await axios.get("documents/?type=sale");
+    console.log("✅ Full API response:", response.data);
+    
+    // ✅ ВИПРАВИТИ СТРУКТУРУ ВІДПОВІДІ:
+    let documents = [];
+    
+    if (response.data && response.data.data) {
+      documents = response.data.data;  // StandardResponse format
+    } else if (Array.isArray(response.data)) {
+      documents = response.data;       // Simple array format
+    } else {
+      console.error("❌ Unexpected response structure:", response.data);
+      documents = [];
     }
-  };
+    
+    console.log("✅ Extracted documents:", documents);
+    setData(documents);
+  } catch (error) {
+    console.error("❌ Error loading sale documents:", error);
+    toast.error("Помилка завантаження документів реалізації");
+    setData([]);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);

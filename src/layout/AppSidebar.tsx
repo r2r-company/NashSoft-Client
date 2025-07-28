@@ -36,7 +36,7 @@ const navItems: NavItem[] = [
       { name: "Поступлення", path: "/receipts" },
       { name: "Реалізація", path: "/sales" },
       { name: "Повернення від клієнта", path: "/return-from-client" },
-      { name: "Повернення постачальнику", path: "/return-to-supplier" },
+      { name: "Повернення постачальнику", path: "/returns-to-supplier" },
       { name: "Переміщення між складами", path: "/transfer" },
       { name: "Інвентаризація", path: "/inventory" },
     ],    

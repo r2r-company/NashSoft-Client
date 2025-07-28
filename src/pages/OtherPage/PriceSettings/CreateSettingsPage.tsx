@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "../../../config/api";
 import toast from "react-hot-toast";
@@ -8,9 +8,7 @@ import Button from "../../../components/ui/button/Button";
 import Input from "../../../components/ui/input/Input";
 import Select from "../../../components/form/Select";
 import ConfirmModal from "../../../components/ui/modal/ConfirmModal";
-import ProductSelectionModal from "../Products/ProductSelectionModal";
-import { Product } from "../../OtherPage/Products/type/Product";
-
+import ProductSelectionModal from "../../../pages/OtherPage/Products/ProductSelectionModal";
 import {
   Table,
   TableBody,
@@ -18,118 +16,150 @@ import {
   TableHeader,
 } from "../../../components/ui/table";
 
+// ✅ ТИПИ ВІДПОВІДНО ДО ТВОЇХ MODELS
 type PriceSettingForm = {
   company: number;
   firm: number;
   valid_from: string;
-  payment_type: string; // 'cash' | 'cashless' | 'both'
   base_type: string;
   base_receipt: number | undefined;
   base_group: number | undefined;
   base_price_type: number | undefined;
   trade_points: number[];
   items: PriceSettingItem[];
-  // Нові поля для покращення функціональності
-  currency: string;
-  rounding_rule: 'kopeck' | 'hryvnia' | 'none';
-  auto_apply_markup: boolean;
-  default_markup_percent: number;
+  comment?: string;
 };
 
-// Нова структура для inline редагування
+// ✅ ВІДПОВІДАЄ ТВОЇЙ PriceSettingItem МОДЕЛІ  
 type PriceSettingItem = {
   product: number | undefined;
   product_name?: string;
-  product_unit?: string;
-  unit: number;
-  unit_name?: string;
-  unit_conversion: number | null;
-  group_id?: number;
-  group_name?: string;
-  base_price: number;
-  cost_price?: number; // Собівартість для контролю рентабельності
+  product_base_unit?: number;      // ✅ БАЗОВА ОДИНИЦЯ ТОВАРУ
+  product_base_unit_name?: string; // ✅ НАЗВА БАЗОВОЇ ОДИНИЦІ
+  
+  price_type: number;
+  base_price: number;              // ✅ ЦІНА ЗА БАЗОВУ ОДИНИЦЮ
+  price: number;                   // ✅ ФІНАЛЬНА ЦІНА (РОЗРАХОВУЄТЬСЯ АВТОМАТИЧНО)
+  
+  // ✅ ФАСУВАННЯ (ОПЦІЙНО):
+  unit_conversion: number | null;  // ✅ ID фасування або null
+  unit_conversion_name?: string;   // ✅ НАЗВА ФАСУВАННЯ
+  final_unit?: number;             // ✅ ФІНАЛЬНА ОДИНИЦЯ ЦІНИ
+  final_unit_name?: string;        // ✅ НАЗВА ФІНАЛЬНОЇ ОДИНИЦІ
+  
   vat_percent: number;
   vat_included: boolean;
-  min_price?: number; // Мінімальна ціна продажу
-  max_discount_percent?: number; // Максимальний відсоток знижки
-  // Об'єкт цін для кожної торгової точки та типу ціни
-  prices: PriceData[];
-};
-
-type PriceData = {
-  trade_point: number;
-  trade_point_name?: string;
-  price_type: number;
-  price_type_name?: string;
-  price: number;
   markup_percent: number;
-  margin_percent?: number; // Відсоток маржі
-  is_active: boolean;
-  effective_from?: string; // Дата початку дії ціни
-  effective_to?: string; // Дата закінчення дії ціни
+  trade_point: number;
+  
+  // ✅ ІНФОРМАЦІЯ ПРО ФІРМУ:
+  firm?: number;
+  firm_name?: string;
+  firm_is_vat_payer?: boolean;
+  price_without_vat?: number;
+  vat_amount?: number;
+  price_with_vat?: number;
 };
 
+// ✅ ВІДПОВІДАЄ ТВОЇМ SERIALIZERS
 type Company = {
   id: number;
   name: string;
+  tax_id?: string;
 };
 
 type Firm = {
   id: number;
   name: string;
-  company: number;
+  company_name: string; // ✅ Назва компанії
+  company_id: number;   // ✅ ID компанії для фільтрації
+  is_vat: boolean; 
+  vat_type: string;
 };
 
 type TradePoint = {
   id: number;
   name: string;
   firm: number;
-  address?: string;
+  firm_name?: string;
 };
 
 type PriceType = {
   id: number;
   name: string;
-  is_retail: boolean;
-  is_wholesale: boolean;
-  default_markup?: number; // Стандартна націнка для типу ціни
+  is_default: boolean;
 };
 
 type ProductGroup = {
   id: number;
   name: string;
   parent?: number;
-  default_markup?: number; // Стандартна націнка для групи
+};
+
+type Product = {
+  id: number;
+  name: string;
+  unit?: number;                   // ✅ БАЗОВА ОДИНИЦЯ
+  unit_name?: string;              // ✅ НАЗВА БАЗОВОЇ ОДИНИЦІ
+  group_id?: number;
+  group_name?: string;
+  price?: number;
+  base_price?: number;             // ✅ БАЗОВА ЦІНА ЗА БАЗОВУ ОДИНИЦЮ
+  conversions?: ProductUnitConversion[];  // ✅ СПИСОК ФАСУВАНЬ
 };
 
 type Receipt = {
   id: number;
   doc_number: string;
   date: string;
-  supplier_name: string;
   status: string;
 };
 
+type Unit = {
+  id: number;
+  name: string;
+  symbol?: string;
+};
+
+type Supplier = {
+  id: number;
+  name: string;
+  code?: string;
+};
+
+type ProductUnitConversion = {
+  id: number;
+  name: string;                   
+  product: number;
+  from_unit: number;               
+  to_unit: number;                 
+  factor: number;                  
+  from_unit_name: string;         
+  to_unit_name: string;          
+};
+
+type SelectedProductWithUnit = {
+  product: Product;
+  unit_conversion_id: number | null;
+  unit_name: string;
+  unit_symbol: string;
+  factor: number;
+};
 
 export default function CreatePriceSettingsPage() {
   const navigate = useNavigate();
   
   const [form, setForm] = useState<PriceSettingForm>({
-    company: 1,
-    firm: 1,
+    company: 0,
+    firm: 0,
     valid_from: new Date().toISOString().split('T')[0],
-    payment_type: 'both',
     base_type: '',
     base_receipt: undefined,
     base_group: undefined,
     base_price_type: undefined,
     trade_points: [],
     items: [],
-    // Нові поля
-    currency: 'UAH',
-    rounding_rule: 'kopeck',
-    auto_apply_markup: false,
-    default_markup_percent: 20
+    comment: ''
   });
 
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -138,6 +168,7 @@ export default function CreatePriceSettingsPage() {
   const [priceTypes, setPriceTypes] = useState<PriceType[]>([]);
   const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -145,92 +176,202 @@ export default function CreatePriceSettingsPage() {
   const [currentItemIndex, setCurrentItemIndex] = useState<number>(-1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showPriceDetails, setShowPriceDetails] = useState<number | null>(null);
   
   const [loadingData, setLoadingData] = useState({
     firms: false,
     tradePoints: false,
     receipts: false
   });
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [selectedSupplier, setSelectedSupplier] = useState<number | null>(null);
 
   useEffect(() => {
     loadDictionaries();
   }, []);
 
-  // Функція округлення ціни згідно з правилами
-  const roundPrice = useCallback((price: number): number => {
-    switch (form.rounding_rule) {
-      case 'hryvnia':
-        return Math.round(price);
-      case 'kopeck':
-        return Math.round(price * 100) / 100;
-      case 'none':
-      default:
-        return price;
-    }
-  }, [form.rounding_rule]);
 
-  // Обчислення маржі
-  const calculateMargin = useCallback((sellingPrice: number, costPrice: number): number => {
-    if (costPrice === 0) return 0;
-    return ((sellingPrice - costPrice) / sellingPrice) * 100;
-  }, []);
+const calculateFinalPrice = (item: PriceSettingItem, conversions: ProductUnitConversion[]): PriceSettingItem => {
+  // ✅ ПРОСТО: яку ціну ввів користувач - така і буде!
+  let finalPrice = item.base_price; // Ціна яку ввів користувач
+  let finalUnit = item.product_base_unit;
+  let finalUnitName = item.product_base_unit_name;
+  let conversionName = "";
 
-  // Обчислення націнки
-  const calculateMarkup = useCallback((sellingPrice: number, costPrice: number): number => {
-    if (costPrice === 0) return 0;
-    return ((sellingPrice - costPrice) / costPrice) * 100;
-  }, []);
+  console.log("🔥 calculateFinalPrice - БЕЗ конверсії:");
+  console.log("  - user input price:", item.base_price);
+  console.log("  - unit_conversion:", item.unit_conversion);
 
-  // Підрахунок загальної статистики
-  const priceStatistics = useMemo(() => {
-    const totalItems = form.items.length;
-    const totalPrices = form.items.reduce((sum, item) => sum + item.prices.length, 0);
-    const activePrices = form.items.reduce((sum, item) => 
-      sum + item.prices.filter(p => p.is_active && p.price > 0).length, 0
-    );
+  // ✅ ЯКЩО ОБРАНО ФАСУВАННЯ - просто змінюємо назву одиниці
+  if (item.unit_conversion) {
+    const conversion = conversions.find(c => c.id === item.unit_conversion);
     
-    let totalRevenue = 0;
-    let totalCost = 0;
-    let lowMarginItems = 0;
+    if (conversion) {
+      // ✅ НЕ ДІЛИМО! Просто беремо ціну як є і показуємо за правильну одиницю
+      finalPrice = item.base_price; // Ціна залишається така ж!
+      finalUnit = conversion.to_unit;
+      finalUnitName = conversion.to_unit_name;
+      conversionName = conversion.name;
+      
+      console.log("  - keeping price as is:", finalPrice, "for", finalUnitName);
+    }
+  }
 
-    form.items.forEach(item => {
-      const activePricesForItem = item.prices.filter(p => p.is_active && p.price > 0);
-      if (activePricesForItem.length > 0 && item.cost_price) {
-        const avgPrice = activePricesForItem.reduce((sum, p) => sum + p.price, 0) / activePricesForItem.length;
-        totalRevenue += avgPrice;
-        totalCost += item.cost_price;
-        
-        const margin = calculateMargin(avgPrice, item.cost_price);
-        if (margin < 10) { // Вважаємо низькою маржу менше 10%
-          lowMarginItems++;
-        }
-      }
-    });
+  return {
+    ...item,
+    price: finalPrice, // Та сама ціна що ввів користувач!
+    final_unit: finalUnit,
+    final_unit_name: finalUnitName,
+    unit_conversion_name: conversionName
+  };
+};
 
-    const averageMargin = totalCost > 0 ? calculateMargin(totalRevenue, totalCost) : 0;
+// ✅ ФУНКЦІЯ ЗАВАНТАЖЕННЯ ФАСУВАНЬ ДЛЯ ТОВАРУ:
+const loadProductConversions = async (productId: number): Promise<ProductUnitConversion[]> => {
+  try {
+    console.log(`Loading conversions for product ${productId}...`);
+    const response = await axios.get(`product-unit-conversions/?product=${productId}`);
+    console.log("✅ Product conversions loaded:", response.data);
+    return response.data || [];
+  } catch (error) {
+    console.error("❌ Error loading product conversions:", error);
+    return [];
+  }
+};
 
-    return {
-      totalItems,
-      totalPrices,
-      activePrices,
-      averageMargin,
-      lowMarginItems
+// ✅ ФУНКЦІЯ ОНОВЛЕННЯ ТОВАРУ З ФАСУВАННЯМИ:
+const updateItemWithProduct = async (index: number, product: Product) => {
+  try {
+    // 1. Завантажуємо фасування для товару
+    const conversions = await loadProductConversions(product.id);
+    
+    // 2. СПОЧАТКУ зберігаємо фасування
+    setProductConversions(prev => ({
+      ...prev,
+      [product.id]: conversions
+    }));
+    
+    // 3. ПОТІМ оновлюємо позицію
+    const updatedItems = [...form.items];
+    updatedItems[index] = {
+      ...updatedItems[index],
+      product: product.id,
+      product_name: product.name,
+      product_base_unit: product.unit,
+      product_base_unit_name: product.unit_name,
+      base_price: product.base_price || product.price || 0,
+      unit_conversion: null,
+      unit_conversion_name: "",
+      final_unit: product.unit,
+      final_unit_name: product.unit_name,
+      price: product.base_price || product.price || 0
     };
-  }, [form.items, calculateMargin]);
+    
+    setForm({ ...form, items: updatedItems });
+    
+    console.log(`✅ Product ${product.name} updated with ${conversions.length} conversions`);
+    
+  } catch (error) {
+    console.error("❌ Error updating product:", error);
+    toast.error("Помилка оновлення товару");
+  }
+};
 
+
+  const loadSuppliers = async () => {
+  try {
+    const response = await axios.get("suppliers/");
+    console.log("✅ Suppliers loaded:", response.data);
+    setSuppliers(response.data);
+  } catch (error) {
+    console.error("❌ Error loading suppliers:", error);
+    setSuppliers([]);
+  }
+};
+
+  const getSelectedFirm = () => {
+  return firms.find(f => f.id === form.firm);
+};
+
+const isSelectedFirmVatPayer = () => {
+  const selectedFirm = getSelectedFirm();
+  return selectedFirm?.is_vat || false;
+};
+
+const calculateVatForItem = (item: PriceSettingItem) => {
+  if (!item.firm_is_vat_payer || item.vat_percent === 0) {
+    return {
+      price_without_vat: item.price,
+      vat_amount: 0,
+      price_with_vat: item.price
+    };
+  }
+
+  let priceWithoutVat: number;
+  let vatAmount: number;
+  let priceWithVat: number;
+
+  if (item.vat_included) {
+    // Ціна ВКЛЮЧАЄ ПДВ - витягуємо ПДВ
+    priceWithoutVat = Math.round((item.price / (1 + item.vat_percent / 100)) * 100) / 100;
+    vatAmount = Math.round((item.price - priceWithoutVat) * 100) / 100;
+    priceWithVat = item.price;
+  } else {
+    // Ціна БЕЗ ПДВ - додаємо ПДВ
+    priceWithoutVat = item.price;
+    vatAmount = Math.round((item.price * item.vat_percent / 100) * 100) / 100;
+    priceWithVat = Math.round((priceWithoutVat + vatAmount) * 100) / 100;
+  }
+
+  return { price_without_vat: priceWithoutVat, vat_amount: vatAmount, price_with_vat: priceWithVat };
+};
+
+const getProductConversions = (productId: number): ProductUnitConversion[] => {
+  const conversions = productConversions[productId] || [];
+  console.log(`🔥 Getting conversions for product ${productId}:`, conversions);
+  return conversions;
+};
+
+
+const handleCompanyChange = (value: string) => {
+  const companyId = parseInt(value);
+  setForm({ 
+    ...form, 
+    company: companyId,
+    firm: 0, // ✅ Скидаємо фірму
+    trade_points: [],
+    items: []
+  });
+  
+  // Скидаємо залежні дані
+  setTradePoints([]);
+  setReceipts([]);
+  setSelectedSupplier(null);
+};
+
+// Фільтровані фірми по компанії
+const getFilteredFirms = () => {
+  return firms.filter(firm => firm.company_id === form.company);
+};
+
+// ✅ ОНОВИТИ ЛОГІКУ ПОКАЗУ КОЛОНОК:
+const shouldShowVatColumns = form.items.some(item => item.firm_is_vat_payer) || isSelectedFirmVatPayer();
+  
+  
+  // ✅ ЗАВАНТАЖЕННЯ ДОВІДНИКІВ ВІДПОВІДНО ДО ТВОЇХ URLs
   const loadDictionaries = async () => {
-    try {
-      setLoading(true);
-      console.log("Loading dictionaries for price settings...");
+  try {
+    setLoading(true);
+    console.log("Loading dictionaries for price settings...");
 
-      const requests = [
-        axios.get("companies/"),
-        axios.get("firms/"),
-        axios.get("price-types/"),
-        axios.get("product-groups/"),
-        axios.get("products/")
-      ];
+    const requests = [
+      axios.get("companies/"),
+      axios.get("firms/"),
+      axios.get("price-types/"),
+      axios.get("product-groups/"),
+      axios.get("products/"),
+      axios.get("units/"),
+      axios.get("suppliers/") // ✅ ДОДАТИ
+    ];
 
       const results = await Promise.allSettled(requests);
       
@@ -240,6 +381,7 @@ export default function CreatePriceSettingsPage() {
       } else {
         console.error("❌ Error loading companies:", results[0].reason);
         setCompanies([]);
+        toast.error("Помилка завантаження компаній");
       }
 
       if (results[1].status === 'fulfilled') {
@@ -248,6 +390,7 @@ export default function CreatePriceSettingsPage() {
       } else {
         console.error("❌ Error loading firms:", results[1].reason);
         setFirms([]);
+        toast.error("Помилка завантаження фірм");
       }
 
       if (results[2].status === 'fulfilled') {
@@ -256,6 +399,7 @@ export default function CreatePriceSettingsPage() {
       } else {
         console.error("❌ Error loading price types:", results[2].reason);
         setPriceTypes([]);
+        toast.error("Помилка завантаження типів цін");
       }
 
       if (results[3].status === 'fulfilled') {
@@ -264,6 +408,7 @@ export default function CreatePriceSettingsPage() {
       } else {
         console.error("❌ Error loading product groups:", results[3].reason);
         setProductGroups([]);
+        toast.error("Помилка завантаження груп товарів");
       }
 
       if (results[4].status === 'fulfilled') {
@@ -272,39 +417,41 @@ export default function CreatePriceSettingsPage() {
       } else {
         console.error("❌ Error loading products:", results[4].reason);
         setAllProducts([]);
+        toast.error("Помилка завантаження товарів");
       }
 
-      setLoading(false);
-    } catch (error) {
-      console.error("Error loading dictionaries:", error);
-      toast.error("Помилка завантаження довідників");
-      setLoading(false);
-    }
-  };
+      if (results[5].status === 'fulfilled') {
+        console.log("✅ Units loaded:", results[5].value.data);
+        setUnits(results[5].value.data);
+      } else {
+        console.error("❌ Error loading units:", results[5].reason);
+        setUnits([]);
+        toast.error("Помилка завантаження одиниць виміру");
+      }
 
-  const loadFirmsByCompany = async (companyId: number) => {
-    setLoadingData(prev => ({ ...prev, firms: true }));
-    
-    try {
-      console.log(`Loading firms for company ${companyId}...`);
-      const response = await axios.get(`firms/?company=${companyId}`);
-      console.log("✅ Firms loaded:", response.data);
-      setFirms(response.data);
-    } catch (error) {
-      console.error("❌ Error loading firms:", error);
-      setFirms([]);
-      toast.error("Не вдалося завантажити фірми для цієї компанії");
-    } finally {
-      setLoadingData(prev => ({ ...prev, firms: false }));
+      if (results[6].status === 'fulfilled') {
+      console.log("✅ Suppliers loaded:", results[6].value.data);
+      setSuppliers(results[6].value.data);
+    } else {
+      console.error("❌ Error loading suppliers:", results[6].reason);
+      setSuppliers([]);
+      toast.error("Помилка завантаження постачальників");
     }
-  };
 
+   setLoading(false);
+  } catch (error) {
+    console.error("Error loading dictionaries:", error);
+    toast.error("Помилка завантаження довідників");
+    setLoading(false);
+  }
+};
+
+  // ✅ ЗАВАНТАЖЕННЯ ТОРГОВИХ ТОЧОК ПО ФІРМІ  
   const loadTradePointsByFirm = async (firmId: number) => {
     setLoadingData(prev => ({ ...prev, tradePoints: true }));
     
     try {
-      console.log(`Loading all trade points and filtering by firm ${firmId}...`);
-      
+      console.log(`Loading trade points for firm ${firmId}...`);
       const response = await axios.get("trade-points/");
       console.log("✅ All trade points loaded:", response.data);
       
@@ -325,40 +472,79 @@ export default function CreatePriceSettingsPage() {
     }
   };
 
-  const loadReceiptsByFirm = async (firmId: number) => {
-    setLoadingData(prev => ({ ...prev, receipts: true }));
+  // ✅ ЗАВАНТАЖЕННЯ ДОКУМЕНТІВ ПОСТУПЛЕННЯ
+const loadReceiptsByFirm = async (firmId: number) => {
+  setLoadingData(prev => ({ ...prev, receipts: true }));
+  
+  try {
+    console.log(`Loading receipts for firm ${firmId}...`);
+    const response = await axios.get(`documents/?type=receipt&status=posted`);
+    console.log("✅ Receipts loaded:", response.data);
     
-    try {
-      console.log(`Loading receipts for firm ${firmId}...`);
-      const response = await axios.get(`documents/?type=receipt&firm=${firmId}&status=posted`);
-      console.log("✅ Receipts loaded:", response.data);
-      setReceipts(response.data);
-    } catch (error) {
-      console.error("❌ Error loading receipts:", error);
-      setReceipts([]);
-      toast.error("Не вдалося завантажити документи поступлення");
-    } finally {
-      setLoadingData(prev => ({ ...prev, receipts: false }));
+    // ✅ ПРАВИЛЬНО ВИТЯГУЄМО ДАНІ:
+    const receiptsData = response.data.data || [];
+    console.log("✅ All receipts:", receiptsData);
+    
+    // ✅ ФІЛЬТРУЄМО ПО ФІРМІ:
+    const filteredReceipts = receiptsData.filter((receipt: any) => receipt.firm === firmId);
+    console.log(`✅ Filtered receipts for firm ${firmId}:`, filteredReceipts);
+    
+    setReceipts(filteredReceipts);
+    
+    if (filteredReceipts.length === 0) {
+      toast.error(`Проведених документів поступлення для цієї фірми не знайдено`);
+    } else {
+      console.log(`✅ Found ${filteredReceipts.length} receipts for firm ${firmId}`);
     }
-  };
-
-  const handleCompanyChange = (value: string) => {
-    const companyId = parseInt(value);
-    setForm({ 
-      ...form, 
-      company: companyId,
-      firm: 1,
-      trade_points: [],
-      items: []
+    
+  } catch (error) {
+    console.error("❌ Error loading receipts:", error);
+    setReceipts([]);
+    toast.error("Не вдалося завантажити документи поступлення");
+  } finally {
+    setLoadingData(prev => ({ ...prev, receipts: false }));
+  }
+};
+  const loadReceiptsBySupplierAndFirm = async (supplierId: number, firmId: number) => {
+  setLoadingData(prev => ({ ...prev, receipts: true }));
+  
+  try {
+    console.log(`Loading receipts for supplier ${supplierId} and firm ${firmId}...`);
+    const response = await axios.get(`documents/?type=receipt&status=posted`);
+    console.log("✅ All receipts loaded:", response.data);
+    
+    const receiptsData = response.data.data || [];
+    
+    // ✅ ОТРИМУЄМО НАЗВУ ФІРМИ ДЛЯ ФІЛЬТРАЦІЇ:
+    const selectedFirm = firms.find(f => f.id === firmId);
+    const firmName = selectedFirm?.name;
+    
+    console.log(`Looking for supplier_id: ${supplierId}, firm_name: "${firmName}"`);
+    
+    // ✅ ФІЛЬТРУЄМО ПО ПОСТАЧАЛЬНИКУ І ФІРМІ:
+    const filteredReceipts = receiptsData.filter((receipt: any) => {
+      console.log(`Receipt ${receipt.id}: supplier_id=${receipt.supplier_id}, firm_name="${receipt.firm_name}"`);
+      return receipt.supplier_id === supplierId && receipt.firm_name === firmName;
     });
     
-    if (companyId) {
-      loadFirmsByCompany(companyId);
+    console.log(`✅ Filtered receipts:`, filteredReceipts);
+    
+    setReceipts(filteredReceipts);
+    
+    if (filteredReceipts.length === 0) {
+      toast.error(`Документів поступлення для цього постачальника та фірми не знайдено`);
     } else {
-      setFirms([]);
-      setTradePoints([]);
+      toast.success(`Знайдено ${filteredReceipts.length} документів поступлення`);
     }
-  };
+    
+  } catch (error) {
+    console.error("❌ Error loading receipts:", error);
+    setReceipts([]);
+    toast.error("Не вдалося завантажити документи поступлення");
+  } finally {
+    setLoadingData(prev => ({ ...prev, receipts: false }));
+  }
+};
 
   const handleFirmChange = (value: string) => {
     const firmId = parseInt(value);
@@ -378,8 +564,6 @@ export default function CreatePriceSettingsPage() {
       setTradePoints([]);
       setReceipts([]);
     }
-    
-    console.log(`🏢 Firm changed to: ${firmId}`);
   };
 
   const handleBaseTypeChange = (value: string) => {
@@ -398,104 +582,180 @@ export default function CreatePriceSettingsPage() {
   };
 
   const handleBaseReceiptChange = async (value: string) => {
-    const receiptId = parseInt(value);
-    setForm({ ...form, base_receipt: receiptId, items: [] });
+  const receiptId = parseInt(value);
+  setForm({ ...form, base_receipt: receiptId, items: [] });
+  
+  console.log("Receipt selected:", receiptId);
+  console.log("Trade points selected:", form.trade_points);
+  console.log("Price types available:", priceTypes.length);
+  
+  if (receiptId && form.trade_points.length > 0 && priceTypes.length > 0) {
+    await loadReceiptProducts(receiptId);
+  } else {
+    console.log("Skipping product load - missing requirements:");
+    console.log("- Receipt ID:", receiptId);
+    console.log("- Trade points:", form.trade_points.length);
+    console.log("- Price types:", priceTypes.length);
+  }
+};
+
+  // ✅ ЗАВАНТАЖЕННЯ ТОВАРІВ З ПОСТУПЛЕННЯ
+const loadReceiptProducts = async (receiptId: number) => {
+  try {
+    console.log(`Loading products from receipt ${receiptId}...`);
+    const response = await axios.get(`receipt-products/?document_id=${receiptId}`);
+    console.log("✅ Receipt products response:", response.data);
     
-    if (receiptId && form.trade_points.length > 0) {
-      await loadReceiptProducts(receiptId);
+    // ✅ ПЕРЕВІР ЩО ПОВЕРТАЄ API:
+    let productsData = [];
+    if (Array.isArray(response.data)) {
+      productsData = response.data;
+    } else if (response.data.data && Array.isArray(response.data.data)) {
+      productsData = response.data.data;
+    } else {
+      console.warn("Unexpected products response:", response.data);
+      toast.error("Неправильний формат відповіді API");
+      return;
     }
-  };
-
-  // Створюємо структуру цін для нового товару з покращеним алгоритмом
-  const createPriceStructureForProduct = (basePrice: number = 0, costPrice: number = 0): PriceData[] => {
-    const prices: PriceData[] = [];
     
-    form.trade_points.forEach(tradePointId => {
-      const tradePoint = tradePoints.find(tp => tp.id === tradePointId);
-      
-      priceTypes.forEach(priceType => {
-        let calculatedPrice = basePrice;
-        let markupPercent = form.default_markup_percent;
+    console.log("✅ Products from receipt:", productsData);
+    
+    if (productsData.length === 0) {
+      toast.error("В цьому документі немає товарів");
+      return;
+    }
 
-        // Застосовуємо стандартну націнку типу ціни
-        if (priceType.default_markup && form.auto_apply_markup) {
-          markupPercent = priceType.default_markup;
-          calculatedPrice = costPrice * (1 + markupPercent / 100);
-        }
+    if (form.trade_points.length === 0) {
+      toast.error("Спочатку оберіть торгові точки");
+      return;
+    }
 
-        // Округлюємо ціну згідно з правилами
-        calculatedPrice = roundPrice(calculatedPrice);
+    if (priceTypes.length === 0) {
+      toast.error("Не знайдено типів цін");
+      return;
+    }
 
-        const marginPercent = calculateMargin(calculatedPrice, costPrice);
+    const newItems: PriceSettingItem[] = [];
+    const defaultPriceType = priceTypes.find(pt => pt.is_default) || priceTypes[0];
+    const defaultUnit = units.find(u => u.name === 'штука') || units[0] || { id: 1 };
 
-        prices.push({
-          trade_point: tradePointId,
-          trade_point_name: tradePoint?.name,
-          price_type: priceType.id,
-          price_type_name: priceType.name,
-          price: calculatedPrice,
-          markup_percent: markupPercent,
-          margin_percent: marginPercent,
-          is_active: true,
-          effective_from: form.valid_from
-        });
-      });
+    // Створюємо позиції для кожного товару з накладної
+    productsData.forEach((receiptItem: any) => {
+  const product = allProducts.find(p => p.id === receiptItem.product);
+  const basePrice = receiptItem.price * 1.2;
+  
+  // ✅ ВИКОРИСТОВУВАТИ ФІРМУ З ФОРМИ (НЕ З API):
+  const selectedFirm = getSelectedFirm();
+  
+  newItems.push({
+    product: receiptItem.product,
+    product_name: product?.name || `Товар ID: ${receiptItem.product}`,
+    price_type: defaultPriceType.id,
+    price: basePrice,
+    vat_percent: selectedFirm?.is_vat ? (receiptItem.vat_percent || 20) : 0,
+    vat_included: selectedFirm?.is_vat || false,
+    markup_percent: 20,
+    product_base_unit: product?.unit,
+    product_base_unit_name: product?.unit_name || units.find(u => u.id === product?.unit)?.name || "—", 
+    base_price: basePrice,
+    unit_conversion: null,  
+    trade_point: form.trade_points[0],
+    // ✅ ФІРМА З ФОРМИ:
+    firm: form.firm,
+    firm_name: selectedFirm?.name,
+    firm_is_vat_payer: selectedFirm?.is_vat || false
+  });
+});
+
+    console.log("✅ Created items:", newItems);
+
+    for (const item of newItems) {
+  if (item.product) {
+    const conversions = await loadProductConversions(item.product);
+    setProductConversions(prev => ({
+      ...prev,
+      [item.product!]: conversions
+    }));
+  }
+}
+    
+    setForm(prev => ({ 
+      ...prev, 
+      items: newItems
+    }));
+
+    toast.success(`Додано ${newItems.length} товарів з документа поступлення`);
+    
+  } catch (error) {
+    console.error("❌ Error loading receipt products:", error);
+    toast.error("Помилка завантаження товарів з документа поступлення");
+  }
+};
+
+// ✅ ВИНЕСТИ ЦЮ ФУНКЦІЮ СЮДИ (ПІСЛЯ loadReceiptProducts):
+const loadProductsByGroup = async (groupId: number) => {
+  try {
+    console.log(`Loading products from group ${groupId}...`);
+    
+    // Фільтруємо товари по групі з уже завантажених
+    const groupProducts = allProducts.filter(product => product.group_id === groupId);
+    console.log("✅ Products from group:", groupProducts);
+    
+    if (groupProducts.length === 0) {
+      toast.error("В цій групі немає товарів");
+      return;
+    }
+
+    if (form.trade_points.length === 0) {
+      toast.error("Спочатку оберіть торгові точки");
+      return;
+    }
+
+    if (priceTypes.length === 0) {
+      toast.error("Не знайдено типів цін");
+      return;
+    }
+
+    const newItems: PriceSettingItem[] = [];
+    const defaultPriceType = priceTypes.find(pt => pt.is_default) || priceTypes[0];
+    const defaultUnit = units.find(u => u.name === 'штука') || units[0] || { id: 1 };
+
+    // Створюємо позиції для кожного товару з групи
+    groupProducts.forEach((product) => {
+      newItems.push({
+  product: product.id,
+  product_name: product.name,
+  price_type: defaultPriceType.id,
+  price: product.price || 0,
+  vat_percent: getSelectedFirm()?.is_vat ? 20 : 0, // ✅
+  vat_included: getSelectedFirm()?.is_vat || false, // ✅
+  markup_percent: 0,
+  product_base_unit: product.unit,
+  product_base_unit_name: product.unit_name,
+  base_price: product.price || 0,
+  unit_conversion: null,
+  trade_point: form.trade_points[0],
+  // ✅ ДОДАТИ ІНФО ПРО ФІРМУ:
+  firm: form.firm,
+  firm_name: getSelectedFirm()?.name,
+  firm_is_vat_payer: getSelectedFirm()?.is_vat || false
+});
     });
+
+    console.log("✅ Created items from group:", newItems);
     
-    return prices;
-  };
+    setForm(prev => ({ 
+      ...prev, 
+      items: newItems
+    }));
 
-  const loadReceiptProducts = async (receiptId: number) => {
-    try {
-      console.log(`Loading products from receipt ${receiptId}...`);
-      const response = await axios.get(`receipt-products/?document_id=${receiptId}`);
-      console.log("✅ Receipt products loaded:", response.data);
-      
-      if (response.data && response.data.length > 0) {
-        const newItems: PriceSettingItem[] = response.data.map((receiptItem: any) => {
-          const product = allProducts.find(p => p.id === receiptItem.product);
-          const costPrice = receiptItem.price || product?.cost_price || 0;
-          const basePrice = product?.price || costPrice * 1.2; // 20% націнка за замовчуванням
-          
-          return {
-            product: receiptItem.product,
-            product_name: product?.name || `Товар ID: ${receiptItem.product}`,
-            product_unit: product?.unit_name || "шт",
-            unit: receiptItem.unit,
-            unit_name: product?.unit_name || "шт",
-            unit_conversion: null,
-            group_id: product?.group_id,
-            group_name: product?.group_name,
-            base_price: basePrice,
-            cost_price: costPrice,
-            vat_percent: receiptItem.vat_percent || 20,
-            vat_included: true,
-            min_price: costPrice * 1.05, // Мінімальна ціна з 5% маржею
-            max_discount_percent: 10,
-            prices: createPriceStructureForProduct(basePrice, costPrice)
-          };
-        });
-
-        // Перевіряємо на дублікати товарів
-        const existingProductIds = form.items.map(item => item.product);
-        const uniqueNewItems = newItems.filter(item => !existingProductIds.includes(item.product));
-
-        if (uniqueNewItems.length !== newItems.length) {
-          toast.error(`Пропущено ${newItems.length - uniqueNewItems.length} товарів, які вже є в списку`);
-        }
-
-        setForm(prev => ({ 
-          ...prev, 
-          items: [...prev.items, ...uniqueNewItems]
-        }));
-
-        toast.success(`Додано ${uniqueNewItems.length} товарів з документа поступлення`);
-      }
-    } catch (error) {
-      console.error("❌ Error loading receipt products:", error);
-      toast.error("Помилка завантаження товарів з документа поступлення");
-    }
-  };
+    toast.success(`Додано ${newItems.length} товарів з групи`);
+    
+  } catch (error) {
+    console.error("❌ Error loading products from group:", error);
+    toast.error("Помилка завантаження товарів з групи");
+  }
+};
 
   const handleTradePointsChange = (tradePointId: number, selected: boolean) => {
     const newTradePoints = selected 
@@ -506,232 +766,193 @@ export default function CreatePriceSettingsPage() {
       ...form, 
       trade_points: newTradePoints
     });
-
-    // Оновлюємо структуру цін для всіх товарів
-    if (form.items.length > 0) {
-      const updatedItems = form.items.map(item => ({
-        ...item,
-        prices: createPriceStructureForProduct(item.base_price, item.cost_price || 0)
-      }));
-
-      setForm(prev => ({ 
-        ...prev, 
-        trade_points: newTradePoints,
-        items: updatedItems 
-      }));
-    }
+      console.log('Trade points updated:', newTradePoints);
+  console.log('Form state:', form);
   };
 
-  // Масове застосування націнки
-  const applyBulkMarkup = (markupPercent: number) => {
-    const updatedItems = form.items.map(item => {
-      const costPrice = item.cost_price || 0;
-      const newBasePrice = roundPrice(costPrice * (1 + markupPercent / 100));
-      
-      return {
-        ...item,
-        base_price: newBasePrice,
-        prices: item.prices.map(price => ({
-          ...price,
-          price: roundPrice(costPrice * (1 + markupPercent / 100)),
-          markup_percent: markupPercent,
-          margin_percent: calculateMargin(roundPrice(costPrice * (1 + markupPercent / 100)), costPrice)
-        }))
-      };
-    });
+const addNewProduct = () => {
+    console.log("🔥 addNewProduct called"); // ✅ ДОДАЙТЕ ЦЕЙ ЛОГ
+  console.log('🔥 Current form.trade_points:', form.trade_points);
+    console.log('🔥 Current form.trade_points:', form.trade_points); // ✅ ДОДАТИ
 
-    setForm({ ...form, items: updatedItems });
-    toast.success(`Застосовано націнку ${markupPercent}% до всіх товарів`);
+  if (form.trade_points.length === 0) {
+        console.log('❌ No trade points selected!');
+
+        console.log('❌ No trade points selected!'); // ✅ ДОДАТИ
+
+    toast.error("Спочатку оберіть торгові точки");
+    return;
+  }
+
+  if (priceTypes.length === 0) {
+    toast.error("Не знайдено типів цін");
+    return;
+  }
+
+  const defaultUnit = units.find(u => u.name === 'штука') || units[0] || { id: 1, name: 'шт' };
+  const defaultPriceType = priceTypes.find(pt => pt.is_default) || priceTypes[0];
+
+  const newItem: PriceSettingItem = {
+    product: undefined,
+    product_name: "",
+    product_base_unit: undefined,       // ✅ ДОДАТИ
+    product_base_unit_name: "",         // ✅ ДОДАТИ
+    price_type: defaultPriceType.id,
+    base_price: 0,                      // ✅ ДОДАТИ
+    price: 0,
+    unit_conversion: null,              // ✅ ДОДАТИ
+    unit_conversion_name: "",           // ✅ ДОДАТИ
+    final_unit: undefined,              // ✅ ДОДАТИ
+    final_unit_name: "",                // ✅ ДОДАТИ
+    vat_percent: isSelectedFirmVatPayer() ? 20 : 0,  // ✅ ВИПРАВИТИ
+    vat_included: isSelectedFirmVatPayer(),          // ✅ ВИПРАВИТИ
+    markup_percent: 0,
+    trade_point: form.trade_points[0],
+    // ✅ ДОДАТИ ІНФО ПРО ФІРМУ:
+    firm: form.firm,
+    firm_name: getSelectedFirm()?.name,
+    firm_is_vat_payer: isSelectedFirmVatPayer()
   };
 
-  // Оновлення ціни для конкретної торгової точки та типу ціни
-  const updateItemPrice = (itemIndex: number, tradePointId: number, priceTypeId: number, field: 'price' | 'markup_percent', value: number) => {
-    const updatedItems = [...form.items];
-    const item = updatedItems[itemIndex];
-    const costPrice = item.cost_price || 0;
-    
-    const priceIndex = item.prices.findIndex(p => p.trade_point === tradePointId && p.price_type === priceTypeId);
-    if (priceIndex !== -1) {
-      let newPrice = item.prices[priceIndex].price;
-      let newMarkup = item.prices[priceIndex].markup_percent;
+  setForm({
+    ...form,
+    items: [...form.items, newItem]
+  });
+};
 
-      if (field === 'price') {
-        newPrice = roundPrice(value);
-        newMarkup = calculateMarkup(newPrice, costPrice);
-        
-        // Перевірка мінімальної ціни
-        if (item.min_price && newPrice < item.min_price) {
-          toast.error(`Ціна не може бути менше мінімальної (${item.min_price} ${form.currency})`);
-          return;
-        }
-      } else if (field === 'markup_percent') {
-        newMarkup = value;
-        newPrice = roundPrice(costPrice * (1 + value / 100));
-      }
-
-      const newMargin = calculateMargin(newPrice, costPrice);
-
-      item.prices[priceIndex] = {
-        ...item.prices[priceIndex],
-        price: newPrice,
-        markup_percent: newMarkup,
-        margin_percent: newMargin
-      };
-      
-      setForm({ ...form, items: updatedItems });
-
-      // Попередження про низьку маржу
-      if (newMargin < 5) {
-        toast.error(`⚠️ Увага! Низька маржа: ${newMargin.toFixed(1)}%`);
-      }
-    }
-  };
-
-  // Оновлення базових властивостей товару
-  const updateItemProperty = (itemIndex: number, field: keyof PriceSettingItem, value: any) => {
-    const updatedItems = [...form.items];
-    const item = updatedItems[itemIndex];
-    
-    updatedItems[itemIndex] = {
-      ...item,
-      [field]: value
-    };
-
-    // Автоматичний перерахунок цін при зміні базової ціни або собівартості
-    if (field === 'base_price' || field === 'cost_price') {
-      const costPrice = field === 'cost_price' ? value : (item.cost_price || 0);
-      
-      updatedItems[itemIndex].prices = item.prices.map(price => {
-        const newPrice = field === 'base_price' ? value : price.price;
-        return {
-          ...price,
-          price: roundPrice(newPrice),
-          markup_percent: calculateMarkup(newPrice, costPrice),
-          margin_percent: calculateMargin(newPrice, costPrice)
-        };
-      });
-    }
-
-    setForm({ ...form, items: updatedItems });
-  };
-
-  // Додавання нового товару
-  const addNewProduct = () => {
-    if (form.trade_points.length === 0) {
-      toast.error("Спочатку оберіть торгові точки");
-      return;
-    }
-
-    const newItem: PriceSettingItem = {
-      product: undefined,
-      product_name: "",
-      product_unit: "шт",
-      unit: 1,
-      unit_name: "шт",
-      unit_conversion: null,
-      group_id: undefined,
-      group_name: "",
-      base_price: 0,
-      cost_price: 0,
-      vat_percent: 20,
-      vat_included: true,
-      min_price: 0,
-      max_discount_percent: 10,
-      prices: createPriceStructureForProduct(0, 0)
-    };
-
-    setForm({
-      ...form,
-      items: [...form.items, newItem]
-    });
-  };
-
-  // Видалення товару
+  // ✅ ВИДАЛЕННЯ ТОВАРУ
   const removeItem = (index: number) => {
     const items = [...form.items];
     items.splice(index, 1);
     setForm({ ...form, items });
   };
 
-  // Обробка вибору товару в інлайн таблиці
-  const handleProductSelect = (product: Product) => {
-    if (currentItemIndex >= 0) {
-      const updatedItems = [...form.items];
-      const item = updatedItems[currentItemIndex];
-      const costPrice = product.cost_price || 0;
-      const basePrice = product.price || (costPrice * 1.2);
+
+
+const [productConversions, setProductConversions] = useState<{[key: number]: ProductUnitConversion[]}>({});
+
+// ✅ ФУНКЦІЯ ОТРИМАННЯ ФАСУВАНЬ ДЛЯ ТОВАРУ:
+const updateItem = (itemIndex: number, field: keyof PriceSettingItem, value: any) => {
+  const updatedItems = [...form.items];
+  updatedItems[itemIndex] = {
+    ...updatedItems[itemIndex],
+    [field]: value
+  };
+  
+  console.log(`🔥 Updating item ${itemIndex}, field: ${field}, value:`, value);
+   
+  setForm({ ...form, items: updatedItems });
+};
+
+  // ✅ ВИБІР ТОВАРУ
+const handleProductSelect = async (selectedItem: SelectedProductWithUnit) => {
+  if (currentItemIndex >= 0) {
+    const conversions = await loadProductConversions(selectedItem.product.id);
+    setProductConversions(prev => ({
+      ...prev,
+      [selectedItem.product.id]: conversions
+    }));
+    
+    // ✅ ПРОСТО ЗБЕРІГАЄМО ДАНІ БЕЗ РОЗРАХУНКІВ:
+    const updatedItems = [...form.items];
+    updatedItems[currentItemIndex] = {
+      ...updatedItems[currentItemIndex],
+      product: selectedItem.product.id,
+      product_name: selectedItem.product.name,
+      product_base_unit: selectedItem.product.unit,
+      product_base_unit_name: selectedItem.product.unit_name,
       
-      // Оновлюємо основну інформацію про товар
-      updatedItems[currentItemIndex] = {
-        ...item,
-        product: product.id,
-        product_name: product.name,
-        product_unit: product.unit_name || "шт",
-        unit: product.unit || 1,
-        unit_name: product.unit_name || "шт",
-        group_id: product.group_id,
-        group_name: product.group_name,
-        base_price: basePrice,
-        cost_price: costPrice,
-        min_price: product.min_price || (costPrice * 1.05),
-        // Оновлюємо ціни з новою базовою ціною
-        prices: createPriceStructureForProduct(basePrice, costPrice)
-      };
-      
-      setForm({ ...form, items: updatedItems });
+      // ✅ БЕЗ РОЗРАХУНКІВ - просто зберігаємо:
+      base_price: 0,  // Користувач введе
+      price: 0,       // = base_price (показуємо те саме)
+      unit_conversion: selectedItem.unit_conversion_id,
+      unit_conversion_name: selectedItem.unit_conversion_id ? selectedItem.unit_name : "",
+      final_unit_name: selectedItem.unit_name,
+    };
+    
+    setForm({ ...form, items: updatedItems });
+  }
+  
+  setShowProductModal(false);
+  setCurrentItemIndex(-1);
+};
+
+  // ✅ ВИБІР КІЛЬКОХ ТОВАРІВ
+// ✅ ОНОВЛЕНА ФУНКЦІЯ ДЛЯ МНОЖЕСТВЕННОГО ВИБОРУ
+const handleMultipleProductsSelect = async (selectedItems: SelectedProductWithUnit[]) => {
+  if (form.trade_points.length === 0 || priceTypes.length === 0) {
+    toast.error("Спочатку оберіть торгові точки");
+    return;
+  }
+
+  const defaultPriceType = priceTypes.find(pt => pt.is_default) || priceTypes[0];
+  const defaultTradePoint = form.trade_points[0];
+  const selectedFirm = getSelectedFirm();
+
+  const newItems: PriceSettingItem[] = [];
+
+  // Обробляємо кожен товар з фасуванням
+  for (const selectedItem of selectedItems) {
+    const conversions = await loadProductConversions(selectedItem.product.id);
+    
+    // Зберігаємо фасування для товару
+    setProductConversions(prev => ({
+      ...prev,
+      [selectedItem.product.id]: conversions
+    }));
+
+    const basePrice = selectedItem.product.base_price || selectedItem.product.price || 0;
+    let finalPrice = basePrice;
+    
+    // Якщо є фасування, перераховуємо ціну
+    if (selectedItem.unit_conversion_id && selectedItem.factor !== 1) {
+      finalPrice = basePrice / selectedItem.factor;
     }
-    setShowProductModal(false);
-    setCurrentItemIndex(-1);
-  };
 
-  // Обробка вибору кількох товарів
-  const handleMultipleProductsSelect = (products: Product[]) => {
-    const newItems: PriceSettingItem[] = products.map(product => {
-      const costPrice = product.cost_price || 0;
-      const basePrice = product.price || (costPrice * 1.2);
+    newItems.push({
+      product: selectedItem.product.id,
+      product_name: selectedItem.product.name,
+      product_base_unit: selectedItem.product.unit,
+      product_base_unit_name: selectedItem.product.unit_name,
+      price_type: defaultPriceType.id,
       
-      return {
-        product: product.id,
-        product_name: product.name,
-        product_unit: product.unit_name || "шт",
-        unit: product.unit || 1,
-        unit_name: product.unit_name || "шт",
-        unit_conversion: null,
-        group_id: product.group_id,
-        group_name: product.group_name,
-        base_price: basePrice,
-        cost_price: costPrice,
-        vat_percent: 20,
-        vat_included: true,
-        min_price: product.min_price || (costPrice * 1.05),
-        max_discount_percent: 10,
-        prices: createPriceStructureForProduct(basePrice, costPrice)
-      };
+      // ✅ БАЗОВА ТА ФІНАЛЬНА ЦІНА:
+      base_price: basePrice,
+      price: finalPrice,
+      
+      // ✅ ІНФОРМАЦІЯ ПРО ФАСУВАННЯ:
+      unit_conversion: selectedItem.unit_conversion_id,
+      unit_conversion_name: selectedItem.unit_conversion_id ? selectedItem.unit_name : "",
+      final_unit: selectedItem.product.unit,
+      final_unit_name: selectedItem.unit_name,
+      
+      vat_percent: selectedFirm?.is_vat ? 20 : 0,
+      vat_included: selectedFirm?.is_vat || false,
+      markup_percent: 0,
+      trade_point: defaultTradePoint,
+      firm: form.firm,
+      firm_name: selectedFirm?.name,
+      firm_is_vat_payer: selectedFirm?.is_vat || false
     });
+  }
 
-    // Перевіряємо на дублікати товарів
-    const existingProductIds = form.items.map(item => item.product);
-    const uniqueNewItems = newItems.filter(item => !existingProductIds.includes(item.product));
+  setForm({ 
+    ...form, 
+    items: [...form.items, ...newItems]
+  });
+  
+  setShowProductModal(false);
+  setCurrentItemIndex(-1);
+  
+  toast.success(`Додано ${selectedItems.length} товарів`);
+};
 
-    if (uniqueNewItems.length !== newItems.length) {
-      toast.error(`Пропущено ${newItems.length - uniqueNewItems.length} товарів, які вже є в списку`);
-    }
+const openProductModal = (itemIndex: number) => {
+  console.log("🔥 Opening product modal for index:", itemIndex); // ✅ ДОДАЙТЕ ЦЕЙ ЛОГ
+  setCurrentItemIndex(itemIndex);
+  setShowProductModal(true);
+};
 
-    setForm({ 
-      ...form, 
-      items: [...form.items.filter(item => item.product), ...uniqueNewItems]
-    });
-    setShowProductModal(false);
-    setCurrentItemIndex(-1);
-  };
-
-  // Відкриття модалки для вибору товару
-  const openProductModal = (itemIndex: number) => {
-    setCurrentItemIndex(itemIndex);
-    setShowProductModal(true);
-  };
-
-  // Відкриття модалки для вибору кількох товарів
   const openMultiProductModal = () => {
     setCurrentItemIndex(-1);
     setShowProductModal(true);
@@ -758,134 +979,72 @@ export default function CreatePriceSettingsPage() {
       return false;
     }
 
-    const hasInvalidItems = form.items.some(item => 
-      !item.product || item.prices.some(price => price.price < 0)
-    );
+    const hasInvalidItems = form.items.some(item => !item.product);
     if (hasInvalidItems) {
-      toast.error("Перевірте правильність заповнення товарів та цін ❗");
+      toast.error("Оберіть товари для всіх позицій ❗");
       return false;
-    }
-
-    // Додаткова валідація для бухгалтерських правил
-    const hasLowMarginItems = form.items.some(item => {
-      if (!item.cost_price) return false;
-      return item.prices.some(price => {
-        const margin = calculateMargin(price.price, item.cost_price!);
-        return margin < 0; // Продаж з збитком
-      });
-    });
-
-    if (hasLowMarginItems) {
-      const confirmed = window.confirm(
-        "⚠️ Деякі товари мають від'ємну маржу (продаж з збитком). Продовжити збереження?"
-      );
-      if (!confirmed) return false;
     }
 
     return true;
   };
 
-  const handleSave = async () => {
-    if (!validateForm()) {
-      return;
-    }
+  // ✅ ЗБЕРЕЖЕННЯ ДОКУМЕНТА
+const handleSave = async () => {
+  if (!validateForm()) {
+    return;
+  }
 
-    setSaving(true);
+  setSaving(true);
 
-    // Перетворюємо дані в формат для сервера
-    const priceItems: any[] = [];
-    
-    form.items.forEach(item => {
-      item.prices.forEach(price => {
-        if (price.is_active && price.price > 0) {
-          priceItems.push({
-            product: item.product,
-            price_type: price.price_type,
-            price: price.price,
-            vat_percent: item.vat_percent,
-            vat_included: item.vat_included,
-            markup_percent: price.markup_percent,
-            margin_percent: price.margin_percent,
-            unit: item.unit,
-            unit_conversion: item.unit_conversion,
-            trade_point: price.trade_point,
-            firm: form.firm,
-            cost_price: item.cost_price,
-            min_price: item.min_price,
-            max_discount_percent: item.max_discount_percent,
-            effective_from: price.effective_from,
-            effective_to: price.effective_to
-          });
-        }
-      });
-    });
 
-    const requestBody = {
-      company: form.company,
-      firm: form.firm,
-      valid_from: form.valid_from,
-      payment_type: form.payment_type,
-      base_type: form.base_type || undefined,
-      base_receipt: form.base_receipt,
-      base_group: form.base_group,
-      base_price_type: form.base_price_type,
-      trade_points: form.trade_points,
-      items: priceItems,
-      // Нові поля
-      currency: form.currency,
-      rounding_rule: form.rounding_rule,
-      auto_apply_markup: form.auto_apply_markup,
-      default_markup_percent: form.default_markup_percent
-    };
-
-    console.log("Sending price setting request:", requestBody);
-
-    try {
-      const response = await axios.post("create-price-setting-document/", requestBody);
-      console.log("✅ Price setting document created:", response.data);
-      
-      toast.success("Документ ціноутворення створено ✅");
-      
-      setTimeout(() => {
-        navigate("/price-settings");
-      }, 500);
-      
-    } catch (error: unknown) {
-      if (error && typeof error === 'object' && 'response' in error) {
-        const axiosError = error as { 
-          response?: { 
-            data?: any; 
-            status?: number;
-            statusText?: string;
-          } 
-        };
-        
-        console.error("API Error:", axiosError.response?.data);
-        
-        if (axiosError.response?.data && typeof axiosError.response.data === 'object') {
-          const errorData = axiosError.response.data;
-          
-          let errorMessage = "Помилка валідації від сервера:\n";
-          
-          Object.keys(errorData).forEach(field => {
-            const fieldErrors = errorData[field];
-            if (Array.isArray(fieldErrors)) {
-              errorMessage += `• ${field}: ${fieldErrors.join(', ')}\n`;
-            }
-          });
-          
-          toast.error(errorMessage);
-        } else {
-          toast.error(`Помилка при створенні документа: ${axiosError.response?.statusText || 'Невідома помилка'}`);
-        }
-      } else {
-        console.error("Unknown error:", error);
-        toast.error("Помилка при створенні документа ❌");
-      }
-    } finally {
-      setSaving(false);
-    }
+  
+  // ✅ ПРАВИЛЬНИЙ ФОРМАТ ВІДПОВІДНО ДО ТВОГО BACKEND
+const requestBody = {
+    company: form.company,
+    firm: form.firm,
+    valid_from: form.valid_from,
+    base_type: form.base_type || undefined,
+    base_receipt: form.base_receipt,
+    base_group: form.base_group,
+    base_price_type: form.base_price_type,
+    trade_points: form.trade_points,
+    items: form.items.map(item => ({
+      product: item.product,
+      price_type: item.price_type,
+      base_price: Number(item.base_price || 0),
+      price: Number(item.base_price || 0),
+      vat_percent: Number(item.vat_percent || 0),
+      vat_included: Boolean(item.vat_included),
+      markup_percent: Number(item.markup_percent || 0),
+      unit_conversion: item.unit_conversion,
+      trade_point: item.trade_point,
+      firm: item.firm || form.firm,
+      unit: item.product_base_unit  // ✅ ДОДАТИ ЦЕ ПОЛЕ!
+    })),
+    comment: form.comment || ""
   };
+
+  console.log("=== ВИПРАВЛЕНИЙ REQUEST З UNIT ===");
+  console.log("Request body:", JSON.stringify(requestBody, null, 2));
+  console.log("Sample item:", requestBody.items[0]);
+  console.log("==================================");
+
+  try {
+    const response = await axios.post("create-price-setting-document/", requestBody);
+    console.log("✅ Success:", response.data);
+    toast.success("Документ ціноутворення створено ✅");
+    
+    setTimeout(() => {
+      navigate("/price-settings");
+    }, 500);
+    
+  } catch (error: any) {
+    console.error("Error:", error.response?.data);
+    toast.error("Помилка збереження");
+  } finally {
+    setSaving(false);
+  }
+};
 
   if (loading) {
     return (
@@ -928,379 +1087,313 @@ export default function CreatePriceSettingsPage() {
       </div>
 
       <div className="grid gap-6">
-        {/* Основна інформація */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
-          <h2 className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
-            Основна інформація
-          </h2>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-                Компанія *
-              </label>
-              <Select
-                options={companies.map(company => ({
-                  value: company.id.toString(),
-                  label: company.name
-                }))}
-                placeholder="Оберіть компанію"
-                onChange={handleCompanyChange}
-                defaultValue={form.company.toString()}
-              />
-            </div>
+  {/* Основна інформація */}
+  <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
+    <h2 className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
+      Основна інформація
+    </h2>
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div>
+        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
+          Компанія *
+        </label>
+        <Select
+  options={companies.map(company => ({
+    value: company.id.toString(),
+    label: company.name
+  }))}
+  placeholder="Оберіть компанію"
+  onChange={handleCompanyChange} // ✅ ЗМІНИТИ НА handleCompanyChange
+  defaultValue="" // ✅ ЗМІНИТИ НА ""
+/>
+      </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-                Фірма *
-              </label>
-              {loadingData.firms ? (
-                <div className="p-3 border border-blue-300 bg-blue-50 rounded-lg text-blue-700 flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                  Завантаження фірм...
-                </div>
-              ) : (
-                <Select
-                  options={firms.map(firm => ({
-                    value: firm.id.toString(),
-                    label: firm.name
-                  }))}
-                  placeholder="Оберіть фірму"
-                  onChange={handleFirmChange}
-                  defaultValue={form.firm.toString()}
-                />
-              )}
-            </div>
+      <div>
+        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
+          Фірма *
+        </label>
+        <Select
+  options={getFilteredFirms().map(firm => ({ // ✅ ВИКОРИСТАТИ getFilteredFirms()
+    value: firm.id.toString(),
+    label: `${firm.name} (${firm.is_vat ? 'з ПДВ' : 'без ПДВ'})` // ✅ ПОКАЗАТИ ПДВ
+  }))}
+  placeholder="Оберіть фірму"
+  onChange={handleFirmChange}
+  defaultValue="" // ✅ ЗМІНИТИ НА ""
+/>
+      </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-                Дата початку дії *
-              </label>
-              <Input
-                type="date"
-                value={form.valid_from}
-                onChange={(e) => setForm({ ...form, valid_from: e.target.value })}
-              />
-            </div>
+      <div>
+        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
+          Дата початку дії *
+        </label>
+        <Input
+          type="date"
+          value={form.valid_from}
+          onChange={(e) => setForm({ ...form, valid_from: e.target.value })}
+        />
+      </div>
+    </div>
+  </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-                Тип оплати *
-              </label>
-              <Select
-                options={[
-                  { value: 'both', label: '💰 Готівка + Безготівка' },
-                  { value: 'cash', label: '💵 Тільки готівка' },
-                  { value: 'cashless', label: '💳 Тільки безготівка' }
-                ]}
-                placeholder="Оберіть тип оплати"
-                onChange={(value) => setForm({ ...form, payment_type: value })}
-                defaultValue={form.payment_type}
-              />
-            </div>
-          </div>
-
-          {/* Додаткові налаштування ціноутворення */}
-          <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-6">
-            <h3 className="mb-4 text-md font-semibold text-gray-800 dark:text-white">
-              Налаштування ціноутворення
-            </h3>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-                  Валюта
-                </label>
-                <Select
-                  options={[
-                    { value: 'UAH', label: '₴ Гривня' },
-                    { value: 'USD', label: '$ Долар США' },
-                    { value: 'EUR', label: '€ Євро' }
-                  ]}
-                  placeholder="Оберіть валюту"
-                  onChange={(value) => setForm({ ...form, currency: value })}
-                  defaultValue={form.currency}
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-                  Правило округлення
-                </label>
-                <Select
-                  options={[
-                    { value: 'kopeck', label: 'До копійок' },
-                    { value: 'hryvnia', label: 'До гривень' },
-                    { value: 'none', label: 'Без округлення' }
-                  ]}
-                  placeholder="Оберіть правило"
-                  onChange={(value) => setForm({ ...form, rounding_rule: value as 'kopeck' | 'hryvnia' | 'none' })}
-                  defaultValue={form.rounding_rule}
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-                  Стандартна націнка %
-                </label>
-                <Input
-                  type="number"
-                  value={form.default_markup_percent.toString()}
-                  onChange={(e) => setForm({ ...form, default_markup_percent: parseFloat(e.target.value) || 0 })}
-                  placeholder="20"
-                />
-              </div>
-
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="auto_apply_markup"
-                  checked={form.auto_apply_markup}
-                  onChange={(e) => setForm({ ...form, auto_apply_markup: e.target.checked })}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <label htmlFor="auto_apply_markup" className="ml-2 text-sm text-gray-700 dark:text-white">
-                  Автоматично застосовувати націнку
-                </label>
-              </div>
-            </div>
-          </div>
-          
-          {/* Торгові точки */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-800 dark:text-white">
-                Торгові точки *
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Оберіть торгові точки, для яких будуть діяти ці ціни
-              </p>
-            </div>
-            {form.trade_points.length > 0 && (
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                Обрано: {form.trade_points.length} з {tradePoints.length}
-              </div>
-            )}
-          </div>
-          
-          {loadingData.tradePoints ? (
-            <div className="p-6 border border-blue-300 bg-blue-50 rounded-lg text-blue-700 flex items-center gap-2">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-              Завантаження торгових точок...
-            </div>
-          ) : tradePoints.length === 0 ? (
-            <div className="p-6 border border-yellow-300 bg-yellow-50 rounded-lg text-yellow-800">
-              <div className="flex items-center gap-3 mb-2">
-                <span className="text-xl">🏪</span>
-                <span className="font-medium">Торгові точки для цієї фірми не знайдені</span>
-              </div>
-              <p className="text-sm">
-                У обраної фірми немає прив'язаних торгових точок. 
-                Додайте торгові точки у розділі "Довідники → Торгові точки" або оберіть іншу фірму.
-              </p>
-              <div className="mt-3">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => window.open('/trade-points', '_blank')}
-                  className="text-sm"
-                >
-                  🔗 Перейти до торгових точок
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <>
-              {/* Кнопки швидкого вибору */}
-              <div className="mb-4 flex items-center gap-3">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setForm({ ...form, trade_points: tradePoints.map(tp => tp.id) })}
-                  disabled={form.trade_points.length === tradePoints.length}
-                >
-                  ✅ Обрати всі
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setForm({ ...form, trade_points: [], items: [] })}
-                  disabled={form.trade_points.length === 0}
-                >
-                  ❌ Скасувати всі
-                </Button>
-              </div>
-
-              {/* Список торгових точок */}
-              <div className="grid gap-3 md:grid-cols-1 lg:grid-cols-2">
-                {tradePoints.map(tradePoint => (
-                  <div 
-                    key={tradePoint.id} 
-                    className={`flex items-center gap-3 p-4 border rounded-lg transition-colors cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 ${
-                      form.trade_points.includes(tradePoint.id)
-                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                        : 'border-gray-200 dark:border-gray-700'
-                    }`}
-                    onClick={() => handleTradePointsChange(tradePoint.id, !form.trade_points.includes(tradePoint.id))}
-                  >
-                    <input
-                      type="checkbox"
-                      id={`trade-point-${tradePoint.id}`}
-                      checked={form.trade_points.includes(tradePoint.id)}
-                      onChange={(e) => handleTradePointsChange(tradePoint.id, e.target.checked)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <label htmlFor={`trade-point-${tradePoint.id}`} className="flex-1 cursor-pointer">
-                      <div className="font-medium text-gray-900 dark:text-white">
-                        🏪 {tradePoint.name}
-                      </div>
-                      {tradePoint.address && (
-                        <div className="text-sm text-gray-500 mt-1">
-                          📍 {tradePoint.address}
-                        </div>
-                      )}
-                      <div className="text-xs text-gray-400 mt-1">
-                        ID: {tradePoint.id}
-                      </div>
-                    </label>
-                    {form.trade_points.includes(tradePoint.id) && (
-                      <div className="text-blue-600 dark:text-blue-400">
-                        ✅
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {/* Інформаційне повідомлення */}
-              {form.trade_points.length > 0 && (
-                <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                  <div className="flex items-center gap-2 text-green-800 dark:text-green-400">
-                    <span className="text-lg">ℹ️</span>
-                    <span className="text-sm font-medium">
-                      Ціни будуть застосовані для {form.trade_points.length} торгов{form.trade_points.length === 1 ? 'ої точки' : form.trade_points.length < 5 ? 'их точок' : 'их точок'}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
+  {/* ✅ 1. СПОЧАТКУ ТОРГОВІ ТОЧКИ */}
+  <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
+    <div className="mb-4 flex items-center justify-between">
+      <div>
+        <h2 className="text-lg font-semibold text-gray-800 dark:text-white">
+          Крок 1: Торгові точки * 
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          Спочатку оберіть торгові точки, для яких будуть діяти ці ціни
+        </p>
+      </div>
+      {form.trade_points.length > 0 && (
+        <div className="text-sm text-gray-600 dark:text-gray-400">
+          Обрано: {form.trade_points.length} з {tradePoints.length}
+        </div>
+      )}
+    </div>
+    
+    {/* Весь код торгових точок тут... */}
+    {loadingData.tradePoints ? (
+      <div className="p-6 border border-blue-300 bg-blue-50 rounded-lg text-blue-700 flex items-center gap-2">
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+        Завантаження торгових точок...
+      </div>
+    ) : tradePoints.length === 0 ? (
+      <div className="p-6 border border-yellow-300 bg-yellow-50 rounded-lg text-yellow-800">
+        <div className="flex items-center gap-3 mb-2">
+          <span className="text-xl">🏪</span>
+          <span className="font-medium">Торгові точки для цієї фірми не знайдені</span>
+        </div>
+        <p className="text-sm">
+          У обраної фірми немає прив'язаних торгових точок. 
+          Додайте торгові точки або оберіть іншу фірму.
+        </p>
+      </div>
+    ) : (
+      <>
+        <div className="mb-4 flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setForm({ ...form, trade_points: tradePoints.map(tp => tp.id) })}
+            disabled={form.trade_points.length === tradePoints.length}
+          >
+            ✅ Обрати всі
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setForm({ ...form, trade_points: [], items: [] })}
+            disabled={form.trade_points.length === 0}
+          >
+            ❌ Скасувати всі
+          </Button>
         </div>
 
-
-          {/* Базування */}
-          <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-6">
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-              Тип базування (необов'язково)
-            </label>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Select
-                options={[
-                  { value: '', label: 'Ручне створення' },
-                  { value: 'receipt', label: '📦 На основі поступлення' },
-                  { value: 'product_group', label: '📁 По групі товарів' },
-                  { value: 'price_type', label: '💰 По типу ціни' }
-                ]}
-                placeholder="Оберіть тип базування"
-                onChange={handleBaseTypeChange}
-                defaultValue={form.base_type}
+        {/* Список торгових точок */}
+        <div className="grid gap-3 md:grid-cols-1 lg:grid-cols-2">
+          {tradePoints.map(tradePoint => (
+            <div 
+              key={tradePoint.id} 
+              className={`flex items-center gap-3 p-4 border rounded-lg transition-colors cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 ${
+                form.trade_points.includes(tradePoint.id)
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                  : 'border-gray-200 dark:border-gray-700'
+              }`}
+              onClick={() => handleTradePointsChange(tradePoint.id, !form.trade_points.includes(tradePoint.id))}
+            >
+              <input
+                type="checkbox"
+                id={`trade-point-${tradePoint.id}`}
+                checked={form.trade_points.includes(tradePoint.id)}
+                onChange={(e) => handleTradePointsChange(tradePoint.id, e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                onClick={(e) => e.stopPropagation()}
               />
-
-              {form.base_type === 'receipt' && (
-                <div className="col-span-2">
-                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
-                    Документ поступлення *
-                  </label>
-                  {loadingData.receipts ? (
-                    <div className="p-3 border border-blue-300 bg-blue-50 rounded-lg text-blue-700 flex items-center gap-2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                      Завантаження документів...
-                    </div>
-                  ) : receipts.length === 0 ? (
-                    <div className="p-3 border border-yellow-300 bg-yellow-50 rounded-lg text-yellow-700">
-                      ⚠️ Проведених документів поступлення для цієї фірми не знайдено
-                    </div>
-                  ) : (
-                    <Select
-                      options={receipts.map(receipt => ({
-                        value: receipt.id.toString(),
-                        label: `${receipt.doc_number} від ${new Date(receipt.date).toLocaleDateString('uk-UA')} (${receipt.supplier_name})`
-                      }))}
-                      placeholder="Оберіть документ поступлення"
-                      onChange={handleBaseReceiptChange}
-                      defaultValue=""
-                    />
-                  )}
-                  {form.base_receipt && (
-                    <div className="mt-2 text-sm text-blue-600 dark:text-blue-400">
-                      ℹ️ Товари з цього документа будуть автоматично додані до ціноутворення
-                    </div>
-                  )}
+              <label htmlFor={`trade-point-${tradePoint.id}`} className="flex-1 cursor-pointer">
+                <div className="font-medium text-gray-900 dark:text-white">
+                  🏪 {tradePoint.name}
+                </div>
+                <div className="text-xs text-gray-400 mt-1">
+                  ID: {tradePoint.id}
+                </div>
+              </label>
+              {form.trade_points.includes(tradePoint.id) && (
+                <div className="text-blue-600 dark:text-blue-400">
+                  ✅
                 </div>
               )}
-
-              {form.base_type === 'product_group' && (
-                <Select
-                  options={productGroups.map(group => ({
-                    value: group.id.toString(),
-                    label: group.name
-                  }))}
-                  placeholder="Оберіть групу товарів"
-                  onChange={(value) => setForm({ ...form, base_group: parseInt(value) })}
-                  defaultValue=""
-                />
-              )}
-
-              {form.base_type === 'price_type' && (
-                <Select
-                  options={priceTypes.map(type => ({
-                    value: type.id.toString(),
-                    label: `${type.name} ${type.is_retail ? '(роздріб)' : ''} ${type.is_wholesale ? '(опт)' : ''}`
-                  }))}
-                  placeholder="Оберіть тип ціни"
-                  onChange={(value) => setForm({ ...form, base_price_type: parseInt(value) })}
-                  defaultValue=""
-                />
-              )}
             </div>
-          </div>
+          ))}
         </div>
 
-        {/* Товари і ціни - Покращена таблиця */}
+        {form.trade_points.length > 0 && (
+          <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+            <div className="flex items-center gap-2 text-green-800 dark:text-green-400">
+              <span className="text-lg">✅</span>
+              <span className="text-sm font-medium">
+                Торгові точки обрано! Тепер можете вибрати базування.
+              </span>
+            </div>
+          </div>
+        )}
+      </>
+    )}
+  </div>
+
+  {/* ✅ 2. ТЕПЕР БАЗУВАННЯ (тільки якщо є торгові точки) */}
+  {form.trade_points.length > 0 && (
+    <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
+      <h2 className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
+        Крок 2: Тип базування (необов'язково)
+      </h2>
+      
+      <div className="grid gap-4 md:grid-cols-2">
+        <Select
+          options={[
+            { value: '', label: 'Ручне створення' },
+            { value: 'receipt', label: '📦 На основі поступлення' },
+            { value: 'product_group', label: '📁 По групі товарів' },
+            { value: 'price_type', label: '💰 По типу ціни' }
+          ]}
+          placeholder="Оберіть тип базування"
+          onChange={handleBaseTypeChange}
+          defaultValue={form.base_type}
+        />
+
+        {form.base_type === 'receipt' && (
+  <div className="col-span-2 space-y-4"> {/* ✅ ДОДАТИ space-y-4 */}
+    {/* ✅ ДОДАТИ ВИБІР ПОСТАЧАЛЬНИКА: */}
+    <div>
+      <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
+        Постачальник *
+      </label>
+      <div className="max-w-md">
+        <Select
+          options={suppliers.map(supplier => ({
+            value: supplier.id.toString(),
+            label: supplier.name
+          }))}
+          placeholder="Оберіть постачальника"
+          onChange={(value) => {
+            const supplierId = parseInt(value);
+            setSelectedSupplier(supplierId);
+            setReceipts([]); // Скидаємо документи
+            setForm({ ...form, base_receipt: undefined, items: [] });
+            
+            // ✅ ЗАВАНТАЖУЄМО ДОКУМЕНТИ ДЛЯ ПОСТАЧАЛЬНИКА
+            if (supplierId && form.firm) {
+              loadReceiptsBySupplierAndFirm(supplierId, form.firm);
+            }
+          }}
+          defaultValue=""
+        />
+      </div>
+    </div>
+
+    {/* ✅ ДОКУМЕНТИ ТІЛЬКИ ЯКЩО ВИБРАНО ПОСТАЧАЛЬНИКА: */}
+    {selectedSupplier && (
+      <div>
+        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
+          Документ поступлення *
+        </label>
+        {loadingData.receipts ? (
+          <div className="p-3 border border-blue-300 bg-blue-50 rounded-lg text-blue-700 flex items-center gap-2">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+            Завантаження документів...
+          </div>
+        ) : (!receipts || receipts.length === 0) ? (
+          <div className="p-3 border border-yellow-300 bg-yellow-50 rounded-lg text-yellow-700">
+            ⚠️ Документів поступлення для цього постачальника не знайдено
+          </div>
+        ) : (
+          <div className="max-w-md">
+            <Select
+              options={receipts.map(receipt => ({
+                value: receipt.id.toString(),
+                label: `${receipt.doc_number} від ${new Date(receipt.date).toLocaleDateString('uk-UA')}`
+              }))}
+              placeholder="Оберіть документ поступлення"
+              onChange={handleBaseReceiptChange}
+              defaultValue=""
+            />
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+)}
+
+{form.base_type === 'product_group' && (
+  <div className="col-span-2">
+    <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
+      Група товарів *
+    </label>
+    <div className="max-w-md">
+      <Select
+        options={productGroups.map(group => ({
+          value: group.id.toString(),
+          label: group.name
+        }))}
+        placeholder="Оберіть групу товарів"
+        onChange={async (value) => {
+          const groupId = parseInt(value);
+          setForm({ ...form, base_group: groupId, items: [] });
+          
+          // ✅ АВТОМАТИЧНО ЗАВАНТАЖУЄМО ТОВАРИ
+          if (groupId && form.trade_points.length > 0 && priceTypes.length > 0) {
+            await loadProductsByGroup(groupId);
+          } else {
+            console.log("Skipping product load - missing requirements:");
+            console.log("- Group ID:", groupId);
+            console.log("- Trade points:", form.trade_points.length);
+            console.log("- Price types:", priceTypes.length);
+          }
+        }}
+        defaultValue=""
+      />
+    </div>
+    {form.base_group && (
+      <div className="mt-2 text-sm text-blue-600 dark:text-blue-400">
+        ℹ️ Товари з цієї групи будуть автоматично додані до ціноутворення
+      </div>
+    )}
+  </div>
+)}
+
+{form.base_type === 'price_type' && (
+  <div className="col-span-2"> {/* ✅ Додай це */}
+    <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-white">
+      Тип ціни *
+    </label>
+    <div className="max-w-md"> {/* ✅ Залиш це для обмеження */}
+      <Select
+        options={priceTypes.map(type => ({
+          value: type.id.toString(),
+          label: type.name
+        }))}
+        placeholder="Оберіть тип ціни"
+        onChange={(value) => setForm({ ...form, base_price_type: parseInt(value) })}
+        defaultValue=""
+      />
+    </div>
+  </div>
+)}
+
+        {/* Інші типи базування... */}
+      </div>
+    </div>
+  )}
+
+        {/* Товари і ціни */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-800 dark:text-white">
               Товари та ціни ({form.items.length})
             </h2>
             <div className="flex gap-2 flex-wrap">
-              {form.items.length > 0 && (
-                <>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => applyBulkMarkup(10)}
-                    className="text-green-600"
-                  >
-                    +10% націнки
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => applyBulkMarkup(20)}
-                    className="text-green-600"
-                  >
-                    +20% націнки
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => applyBulkMarkup(50)}
-                    className="text-green-600"
-                  >
-                    +50% націнки
-                  </Button>
-                </>
-              )}
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -1351,342 +1444,294 @@ export default function CreatePriceSettingsPage() {
             <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-white/10">
               <Table>
                 <TableHeader>
-                  <tr className="border-b border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5">
-                    <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                      Товар *
-                    </TableCell>
-                    <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                      Собівартість ₴
-                    </TableCell>
-                    <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                      Базова ціна ₴
-                    </TableCell>
-                    <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                      Середня маржа %
-                    </TableCell>
-                    <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
-                      ПДВ %
-                    </TableCell>
-                    <TableCell isHeader className="px-4 py-3 text-center text-sm font-semibold text-gray-600 dark:text-white">
-                      З ПДВ
-                    </TableCell>
-                    <TableCell isHeader className="px-4 py-3 text-center text-sm font-semibold text-gray-600 dark:text-white">
-                      Деталі цін
-                    </TableCell>
-                    <TableCell isHeader className="px-4 py-3 text-center text-sm font-semibold text-gray-600 dark:text-white">
-                      Дії
-                    </TableCell>
-                  </tr>
-                </TableHeader>
+  <tr className="border-b border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5">
+    <TableCell isHeader className="px-4 py-3 text-left text-sm font-semibold text-gray-600 dark:text-white">
+      Товар *
+    </TableCell>
+    <TableCell isHeader className="px-4 py-3 text-center text-sm font-semibold text-gray-600 dark:text-white">
+      Базова од.
+    </TableCell>
+    <TableCell isHeader className="px-4 py-3 text-center text-sm font-semibold text-gray-600 dark:text-white">
+      Фасування
+    </TableCell>
+    <TableCell isHeader className="px-4 py-3 text-center text-sm font-semibold text-gray-600 dark:text-white">
+      Базова ціна
+    </TableCell>
+    <TableCell isHeader className="px-4 py-3 text-center text-sm font-semibold text-gray-600 dark:text-white">
+      Фінальна ціна
+    </TableCell>
+    <TableCell isHeader className="px-4 py-3 text-center text-sm font-semibold text-gray-600 dark:text-white">
+      Тип ціни
+    </TableCell>
+    <TableCell isHeader className="px-4 py-3 text-center text-sm font-semibold text-gray-600 dark:text-white">
+      Торгова точка
+    </TableCell>
+    {shouldShowVatColumns && (
+      <>
+        <TableCell isHeader className="px-4 py-3 text-center text-sm font-semibold text-gray-600 dark:text-white">
+          ПДВ %
+        </TableCell>
+        <TableCell isHeader className="px-4 py-3 text-center text-sm font-semibold text-gray-600 dark:text-white">
+          З ПДВ
+        </TableCell>
+      </>
+    )}
+    <TableCell isHeader className="px-4 py-3 text-center text-sm font-semibold text-gray-600 dark:text-white">
+      Дії
+    </TableCell>
+  </tr>
+</TableHeader>
 
-                <TableBody>
-                  {form.items.map((item, itemIndex) => {
-                    const activePrices = item.prices.filter(p => p.is_active && p.price > 0);
-                    const avgMargin = activePrices.length > 0 
-                      ? activePrices.reduce((sum, p) => sum + (p.margin_percent || 0), 0) / activePrices.length
-                      : 0;
-                    
-                    return (
-                      <tr key={itemIndex} className="border-b border-gray-100 dark:border-white/10">
-                        <TableCell className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1">
-                              {item.product_name ? (
-                                <div className="p-2 bg-gray-50 dark:bg-gray-700 rounded border">
-                                  <div className="font-medium text-sm">{item.product_name}</div>
-                                  <div className="text-xs text-gray-500 mt-1">
-                                    ID: {item.product} • {item.unit_name}
-                                    {item.group_name && ` • ${item.group_name}`}
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="p-2 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded text-center text-gray-500">
-                                  Товар не обрано
-                                </div>
-                              )}
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openProductModal(itemIndex)}
-                            >
-                              {item.product_name ? "Змінити" : "Обрати"}
-                            </Button>
-                          </div>
-                        </TableCell>
-                        <TableCell className="px-4 py-3">
-                          <Input
-                            type="number"
-                            value={item.cost_price?.toString() || '0'}
-                            onChange={(e) => updateItemProperty(itemIndex, 'cost_price', parseFloat(e.target.value) || 0)}
-                            placeholder="0.00"
-                            className="w-28"
-                          />
-                        </TableCell>
-                        <TableCell className="px-4 py-3">
-                          <Input
-                            type="number"
-                            value={item.base_price.toString()}
-                            onChange={(e) => updateItemProperty(itemIndex, 'base_price', parseFloat(e.target.value) || 0)}
-                            placeholder="0.00"
-                            className="w-28"
-                          />
-                        </TableCell>
-                        <TableCell className="px-4 py-3">
-                          <div className={`text-sm font-medium ${
-                            avgMargin < 0 ? 'text-red-600' : 
-                            avgMargin < 10 ? 'text-yellow-600' : 
-                            'text-green-600'
-                          }`}>
-                            {avgMargin.toFixed(1)}%
-                          </div>
-                          {avgMargin < 0 && (
-                            <div className="text-xs text-red-500">Збиток!</div>
-                          )}
-                        </TableCell>
-                        <TableCell className="px-4 py-3">
-                          <Input
-                            type="number"
-                            value={item.vat_percent.toString()}
-                            onChange={(e) => updateItemProperty(itemIndex, 'vat_percent', parseFloat(e.target.value) || 0)}
-                            placeholder="20"
-                            className="w-20"
-                          />
-                        </TableCell>
-                        <TableCell className="px-4 py-3 text-center">
-                          <input
-                            type="checkbox"
-                            checked={item.vat_included}
-                            onChange={(e) => updateItemProperty(itemIndex, 'vat_included', e.target.checked)}
-                            className="rounded border-gray-300"
-                          />
-                        </TableCell>
-                        <TableCell className="px-4 py-3 text-center">
-                          <div className="text-sm text-gray-600 dark:text-gray-400">
-                            {activePrices.length} / {item.prices.length} активних
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setShowPriceDetails(showPriceDetails === itemIndex ? null : itemIndex)}
-                            className="mt-1 text-xs"
-                          >
-                            {showPriceDetails === itemIndex ? 'Сховати' : 'Показати'}
-                          </Button>
-                        </TableCell>
-                        <TableCell className="px-4 py-3 text-center">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => removeItem(itemIndex)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            🗑️
-                          </Button>
-                        </TableCell>
-                      </tr>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-
-              {/* Детальний вигляд цін для обраного товару */}
-              {showPriceDetails !== null && form.items[showPriceDetails] && (
-                <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border-t">
-                  <h4 className="text-sm font-medium text-gray-700 dark:text-white mb-3">
-                    📊 Детальні ціни для товару: {form.items[showPriceDetails].product_name}
-                  </h4>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full">
-                      <thead>
-                        <tr className="border-b border-gray-200 dark:border-gray-700">
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Торгова точка</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Тип ціни</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Ціна {form.currency}</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Націнка %</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Маржа %</th>
-                          <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Активна</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {form.items[showPriceDetails].prices.map((price, priceIndex) => (
-                          <tr key={priceIndex} className="border-b border-gray-100 dark:border-gray-600">
-                            <td className="px-3 py-2 text-sm">{price.trade_point_name}</td>
-                            <td className="px-3 py-2 text-sm">{price.price_type_name}</td>
-                            <td className="px-3 py-2">
-                              <Input
-                                type="number"
-                                value={price.price.toString()}
-                                onChange={(e) => updateItemPrice(
-                                  showPriceDetails, 
-                                  price.trade_point, 
-                                  price.price_type, 
-                                  'price', 
-                                  parseFloat(e.target.value) || 0
-                                )}
-                                className="w-24 text-sm"
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <Input
-                                type="number"
-                                value={price.markup_percent.toString()}
-                                onChange={(e) => updateItemPrice(
-                                  showPriceDetails, 
-                                  price.trade_point, 
-                                  price.price_type, 
-                                  'markup_percent', 
-                                  parseFloat(e.target.value) || 0
-                                )}
-                                className="w-20 text-sm"
-                              />
-                            </td>
-                            <td className={`px-3 py-2 text-sm font-medium ${
-                              (price.margin_percent || 0) < 0 ? 'text-red-600' : 
-                              (price.margin_percent || 0) < 10 ? 'text-yellow-600' : 
-                              'text-green-600'
-                            }`}>
-                              {(price.margin_percent || 0).toFixed(1)}%
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                checked={price.is_active}
-                                onChange={(e) => {
-                                  const updatedItems = [...form.items];
-                                  const priceIdx = updatedItems[showPriceDetails].prices.findIndex(
-                                    p => p.trade_point === price.trade_point && p.price_type === price.price_type
-                                  );
-                                  if (priceIdx !== -1) {
-                                    updatedItems[showPriceDetails].prices[priceIdx].is_active = e.target.checked;
-                                    setForm({ ...form, items: updatedItems });
-                                  }
-                                }}
-                                className="rounded border-gray-300"
-                              />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+<TableBody>
+  {form.items.map((item, index) => {
+    const conversions = getProductConversions(item.product || 0);
+    
+    return (
+      <tr key={index} className="border-b border-gray-100 dark:border-white/10">
+        {/* ✅ ТОВАР */}
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              {item.product_name ? (
+                <div className="p-2 bg-gray-50 dark:bg-gray-700 rounded border">
+                  <div className="font-medium text-sm">{item.product_name}</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    ID: {item.product}
                   </div>
                 </div>
-              )}
-
-              {/* Підказки */}
-              {form.items.length > 0 && (
-                <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                  <h4 className="text-sm font-medium text-blue-800 dark:text-blue-400 mb-3">
-                    💡 Бухгалтерські підказки:
-                  </h4>
-                  <div className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
-                    <div>• <strong>Маржа</strong> = (Ціна - Собівартість) / Ціна × 100%</div>
-                    <div>• <strong>Націнка</strong> = (Ціна - Собівартість) / Собівартість × 100%</div>
-                    <div>• <strong>Червоний колір</strong> - збиткова ціна (маржа від'ємна)</div>
-                    <div>• <strong>Жовтий колір</strong> - низька маржа (менше 10%)</div>
-                    <div>• <strong>Зелений колір</strong> - нормальна маржа (10% і більше)</div>
-                    <div>• Ціни автоматично округлюються згідно з обраним правилом</div>
-                  </div>
+              ) : (
+                <div className="p-2 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded text-center text-gray-500">
+                  Товар не обрано
                 </div>
               )}
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openProductModal(index)}
+            >
+              {item.product_name ? "Змінити" : "Обрати"}
+            </Button>
+          </div>
+        </td>
+        
+        {/* ✅ БАЗОВА ОДИНИЦЯ */}
+        <td className="px-4 py-3">
+          <div className="text-center">
+            <span className="text-sm font-medium">
+              {item.product_base_unit_name || "—"}
+            </span>
+          </div>
+        </td>
+        
+        {/* ✅ ФАСУВАННЯ */}
+        <td className="px-4 py-3">
+          <div className="flex justify-center">
+            <div className="w-40">
+              {item.product ? (
+                <Select
+                  options={[
+                    { value: '', label: 'Без фасування' },
+                    ...conversions.map(conv => ({
+                      value: conv.id.toString(),
+                      label: conv.name
+                    }))
+                  ]}
+                  placeholder="Оберіть фасування"
+                  onChange={(value) => updateItem(index, 'unit_conversion', value ? parseInt(value) : null)}
+                  defaultValue={item.unit_conversion?.toString() || ''}
+                  key={`conversion-${item.product}-${conversions.length}-${item.unit_conversion}`}
+                />
+              ) : (
+                <div className="text-center text-gray-400 text-sm">
+                  Оберіть товар
+                </div>
+              )}
+            </div>
+          </div>
+        </td>
+        
+        {/* ✅ БАЗОВА ЦІНА - ПОЛЕ ДЛЯ ВВЕДЕННЯ */}
+        <td className="px-4 py-3">
+          <div className="flex justify-center">
+            <Input
+              type="number"
+              value={item.base_price?.toString() || ''}
+              onChange={(e) => updateItem(index, 'base_price', parseFloat(e.target.value) || 0)}
+              className="w-28 text-center"
+              placeholder="Введіть ціну"
+            />
+          </div>
+        </td>
+        
+        {/* ✅ ФІНАЛЬНА ЦІНА - АВТОМАТИЧНО РОЗРАХОВУЄТЬСЯ */}
+        <td className="px-4 py-3">
+  <div className="text-center">
+    <div className="text-lg font-bold text-green-600">
+      {(item.base_price || 0).toFixed(2)} ₴
+    </div>
+    <div className="text-xs text-gray-500">
+      за {item.final_unit_name || item.product_base_unit_name || "од."}
+    </div>
+  </div>
+</td>
+        
+        {/* ✅ ТИП ЦІНИ */}
+        <td className="px-4 py-3">
+          <div className="flex justify-center">
+            <div className="w-32">
+              <Select
+                options={priceTypes.map(pt => ({
+                  value: pt.id.toString(),
+                  label: pt.name
+                }))}
+                placeholder="Тип ціни"
+                onChange={(value) => updateItem(index, 'price_type', parseInt(value))}
+                defaultValue={item.price_type?.toString() || ''}
+              />
+            </div>
+          </div>
+        </td>
+        
+        {/* ✅ ТОРГОВА ТОЧКА */}
+        <td className="px-4 py-3">
+          <div className="flex justify-center">
+            <div className="w-36">
+              <Select
+                options={tradePoints.map(tp => ({
+                  value: tp.id.toString(),
+                  label: tp.name
+                }))}
+                placeholder="Торгова точка"
+                onChange={(value) => updateItem(index, 'trade_point', parseInt(value))}
+                defaultValue={item.trade_point?.toString() || ''}
+              />
+            </div>
+          </div>
+        </td>
+        
+        {/* ✅ КОЛОНКИ ПДВ (якщо потрібно) */}
+        {shouldShowVatColumns && (
+          <>
+            <td className="px-4 py-3">
+              <div className="flex justify-center">
+                {item.firm_is_vat_payer ? (
+                  <Input
+                    type="number"
+                    value={item.vat_percent?.toString() || '0'}
+                    onChange={(e) => updateItem(index, 'vat_percent', parseFloat(e.target.value) || 0)}
+                    className="w-20 text-center"
+                    placeholder="20"
+                  />
+                ) : (
+                  <span className="text-gray-400">—</span>
+                )}
+              </div>
+            </td>
+            
+            <td className="px-4 py-3">
+              <div className="flex justify-center">
+                {item.firm_is_vat_payer ? (
+                  <input
+                    type="checkbox"
+                    checked={item.vat_included || false}
+                    onChange={(e) => updateItem(index, 'vat_included', e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
+                ) : (
+                  <span className="text-gray-400">—</span>
+                )}
+              </div>
+            </td>
+          </>
+        )}
+        
+        {/* ✅ ДІЇ */}
+        <td className="px-4 py-3">
+          <div className="flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => removeItem(index)}
+              className="text-red-600 hover:text-red-700"
+            >
+              🗑️
+            </Button>
+          </div>
+        </td>
+      </tr>
+    );
+  })}
+</TableBody>
+              </Table>
+            </div>  
           )}
 
-          {/* Покращені підсумки з аналітикою */}
+          {/* Підсумки */}
           {form.items.length > 0 && (
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Основні показники */}
-              <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-white/10 dark:bg-white/5">
-                <h4 className="font-semibold text-gray-800 dark:text-white">📊 Основні показники</h4>
+            <div className="mt-6 flex justify-end">
+              <div className="w-80 space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-white/10 dark:bg-white/5">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600 dark:text-gray-400">Торгових точок:</span>
                   <span className="font-medium">{form.trade_points.length}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">Товарів:</span>
-                  <span className="font-medium">{priceStatistics.totalItems}</span>
+                  <span className="text-gray-600 dark:text-gray-400">Позицій цін:</span>
+                  <span className="font-medium">{form.items.length}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600 dark:text-gray-400">Типів цін:</span>
                   <span className="font-medium">{priceTypes.length}</span>
                 </div>
-                <div className="border-t border-gray-300 pt-2 dark:border-white/20">
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-gray-800 dark:text-white">Активних позицій:</span>
-                    <span className="text-lg font-bold text-green-600 dark:text-green-400">
-                      {priceStatistics.activePrices}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Аналітика рентабельності */}
-              <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-white/10 dark:bg-white/5">
-                <h4 className="font-semibold text-gray-800 dark:text-white">💰 Аналітика рентабельності</h4>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">Середня маржа:</span>
-                  <span className={`font-medium ${
-                    priceStatistics.averageMargin < 0 ? 'text-red-600' : 
-                    priceStatistics.averageMargin < 10 ? 'text-yellow-600' : 
-                    'text-green-600'
-                  }`}>
-                    {priceStatistics.averageMargin.toFixed(1)}%
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">Товарів з низькою маржею:</span>
-                  <span className={`font-medium ${priceStatistics.lowMarginItems > 0 ? 'text-yellow-600' : 'text-green-600'}`}>
-                    {priceStatistics.lowMarginItems}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">Валюта:</span>
-                  <span className="font-medium">{form.currency}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">Округлення:</span>
-                  <span className="font-medium">
-                    {form.rounding_rule === 'kopeck' ? 'До копійок' : 
-                     form.rounding_rule === 'hryvnia' ? 'До гривень' : 'Без округлення'}
-                  </span>
-                </div>
               </div>
             </div>
           )}
         </div>
+
+        {/* Коментар */}
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
+          <h2 className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
+            Коментар (необов'язково)
+          </h2>
+          <textarea
+            value={form.comment || ''}
+            onChange={(e) => setForm({ ...form, comment: e.target.value })}
+            placeholder="Додайте коментар до документа ціноутворення..."
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            rows={3}
+          />
+        </div>
       </div>
+         {/* Модалка вибору товару */}
+     <ProductSelectionModal
+       isOpen={showProductModal}
+       onClose={() => {
+         setShowProductModal(false);
+         setCurrentItemIndex(-1);
+       }}
+       onProductSelect={handleProductSelect}
+       onMultipleProductsSelect={handleMultipleProductsSelect}
+       multiSelect={currentItemIndex === -1}
+       selectedWarehouse={undefined}
+     />
 
-      {/* Модалка вибору товару */}
-      <ProductSelectionModal
-        isOpen={showProductModal}
-        onClose={() => {
-          setShowProductModal(false);
-          setCurrentItemIndex(-1);
-        }}
-        onProductSelect={handleProductSelect}
-        onMultipleProductsSelect={handleMultipleProductsSelect}
-        multiSelect={currentItemIndex === -1}
-        selectedWarehouse={undefined} // Для ціноутворення склад не обов'язковий
-      />
+     {/* Модальне вікно підтвердження */}
+     <ConfirmModal
+       isOpen={showSaveModal}
+       title="Зберегти документ ціноутворення?"
+       description={`Ви впевнені, що хочете створити документ ціноутворення з наступними параметрами:
 
-      {/* Модальне вікно підтвердження */}
-      <ConfirmModal
-        isOpen={showSaveModal}
-        title="Зберегти документ ціноутворення?"
-        description={`Ви впевнені, що хочете створити документ ціноутворення з наступними параметрами:
-
-• Товарів: ${form.items.length}
-• Торгових точок: ${form.trade_points.length}
-• Активних цінових позицій: ${priceStatistics.activePrices}
-• Тип оплати: ${form.payment_type === 'both' ? 'Готівка + Безготівка' : form.payment_type === 'cash' ? 'Готівка' : 'Безготівка'}
-• Середня маржа: ${priceStatistics.averageMargin.toFixed(1)}%${priceStatistics.lowMarginItems > 0 ? `
-• ⚠️ Товарів з низькою маржею: ${priceStatistics.lowMarginItems}` : ''}`}
-        onConfirm={() => {
-          setShowSaveModal(false);
-          handleSave();
-        }}
-        onClose={() => setShowSaveModal(false)}
-      />
-    </>
-  );
+- Товарів: ${form.items.length}
+- Торгових точок: ${form.trade_points.length}
+- Компанія: ${companies.find(c => c.id === form.company)?.name || 'Не обрано'}
+- Фірма: ${firms.find(f => f.id === form.firm)?.name || 'Не обрано'}
+- Дата початку дії: ${form.valid_from}`}
+       onConfirm={() => {
+         setShowSaveModal(false);
+         handleSave();
+       }}
+       onClose={() => setShowSaveModal(false)}
+     />
+   </>
+ );
 }

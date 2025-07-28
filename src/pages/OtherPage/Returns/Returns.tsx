@@ -6,7 +6,6 @@ import PageMeta from "../../../components/common/PageMeta";
 import PageBreadcrumb from "../../../components/common/PageBreadCrumb";
 import Button from "../../../components/ui/button/Button";
 
-
 import {
   Table,
   TableBody,
@@ -14,8 +13,8 @@ import {
   TableHeader,
 } from "../../../components/ui/table";
 
-// Оновлений тип відповідно до нового API
-type Receipt = {
+// Тип для документа повернення від клієнта
+type Return = {
   id: number;
   doc_type: string;
   doc_number: string;
@@ -23,6 +22,13 @@ type Receipt = {
   company_name: string;
   firm_name: string;
   warehouse_name: string;
+  customer_id?: number;
+  customer_name?: string;
+  trade_point_id?: number;
+  trade_point_name?: string;
+  original_sale_id?: number;        // Посилання на оригінальний документ реалізації
+  original_sale_number?: string;    // Номер оригінального документа
+  return_reason?: string;           // Причина повернення
   status: string;
 };
 
@@ -31,29 +37,44 @@ type FilterState = {
   company: string;
   firm: string;
   warehouse: string;
+  customer: string;
+  returnReason: string;
   dateFrom: string;
   dateTo: string;
 };
 
-// Статуси документів
+// Статуси документів повернення
 const STATUS_LABELS = {
   draft: "Чернетка",
   posted: "Проведено",
   cancelled: "Скасовано",
-  pending: "В очікуванні"
+  pending: "В очікуванні",
+  approved: "Затверджено"
 };
 
 const STATUS_COLORS = {
   draft: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400",
   posted: "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400",
   cancelled: "bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400",
-  pending: "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400"
+  pending: "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400",
+  approved: "bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400"
+};
+
+// Причини повернення
+const RETURN_REASONS = {
+  defective: "Брак товару",
+  wrong_item: "Помилковий товар",
+  customer_request: "Бажання клієнта",
+  warranty: "Гарантійний випадок",
+  expired: "Прострочений товар",
+  damaged: "Пошкоджений при доставці",
+  other: "Інше"
 };
 
 const ITEMS_PER_PAGE_OPTIONS = [10, 25, 50, 100];
 
-export default function Receipts() {
-  const [data, setData] = useState<Receipt[]>([]);
+export default function Returns() {
+  const [data, setData] = useState<Return[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -64,6 +85,8 @@ export default function Receipts() {
     company: '',
     firm: '',
     warehouse: '',
+    customer: '',
+    returnReason: '',
     dateFrom: '',
     dateTo: ''
   });
@@ -71,34 +94,43 @@ export default function Receipts() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    loadReceipts();
+    loadReturns();
   }, []);
 
   useEffect(() => {
     setCurrentPage(1); // Скидання сторінки при зміні пошуку або фільтрів
   }, [search, filters]);
 
-const loadReceipts = async () => {
-  try {
-    setLoading(true);
-    console.log("Loading receipt documents...");
-    
-    const response = await axios.get("documents/?type=receipt");
-    console.log("✅ Documents loaded:", response.data);
-    
-    // ✅ ВИПРАВИТИ - ВИТЯГУВАТИ З response.data.data:
-    const documentsData = response.data.data || [];
-    console.log("✅ Extracted documents:", documentsData);
-    
-    setData(documentsData);
-  } catch (error) {
-    console.error("❌ Error loading documents:", error);
-    toast.error("Помилка завантаження документів");
-    setData([]);
-  } finally {
-    setLoading(false);
-  }
-};
+  const loadReturns = async () => {
+    try {
+      setLoading(true);
+      console.log("Loading return documents...");
+      
+      const response = await axios.get("documents/?type=return_from_client");
+      console.log("✅ Full API response:", response.data);
+      
+      // ✅ ВИПРАВИТИ СТРУКТУРУ ВІДПОВІДІ:
+      let documents = [];
+      
+      if (response.data && response.data.data) {
+        documents = response.data.data;  // StandardResponse format
+      } else if (Array.isArray(response.data)) {
+        documents = response.data;       // Simple array format
+      } else {
+        console.error("❌ Unexpected response structure:", response.data);
+        documents = [];
+      }
+      
+      console.log("✅ Extracted documents:", documents);
+      setData(documents);
+    } catch (error) {
+      console.error("❌ Error loading return documents:", error);
+      toast.error("Помилка завантаження документів повернення");
+      setData([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);
@@ -117,6 +149,8 @@ const loadReceipts = async () => {
       company: '',
       firm: '',
       warehouse: '',
+      customer: '',
+      returnReason: '',
       dateFrom: '',
       dateTo: ''
     });
@@ -143,45 +177,59 @@ const loadReceipts = async () => {
     );
   };
 
+  const getReturnReasonLabel = (reason?: string) => {
+    if (!reason) return "—";
+    return RETURN_REASONS[reason as keyof typeof RETURN_REASONS] || reason;
+  };
+
   // Фільтрація документів по пошуку та фільтрам
-  const filteredData = data.filter(receipt => {
+  const filteredData = data.filter(returnDoc => {
     // Пошук
     if (search) {
       const query = search.toLowerCase();
       const matchesSearch = (
-        receipt.doc_number.toLowerCase().includes(query) ||
-        receipt.company_name.toLowerCase().includes(query) ||
-        receipt.firm_name.toLowerCase().includes(query) ||
-        receipt.warehouse_name.toLowerCase().includes(query)
+        returnDoc.doc_number.toLowerCase().includes(query) ||
+        returnDoc.company_name.toLowerCase().includes(query) ||
+        returnDoc.firm_name.toLowerCase().includes(query) ||
+        returnDoc.warehouse_name.toLowerCase().includes(query) ||
+        (returnDoc.customer_name && returnDoc.customer_name.toLowerCase().includes(query)) ||
+        (returnDoc.trade_point_name && returnDoc.trade_point_name.toLowerCase().includes(query)) ||
+        (returnDoc.original_sale_number && returnDoc.original_sale_number.toLowerCase().includes(query))
       );
       if (!matchesSearch) return false;
     }
 
     // Фільтр по статусу
-    if (filters.status && receipt.status !== filters.status) return false;
+    if (filters.status && returnDoc.status !== filters.status) return false;
 
     // Фільтр по компанії
-    if (filters.company && !receipt.company_name.toLowerCase().includes(filters.company.toLowerCase())) return false;
+    if (filters.company && !returnDoc.company_name.toLowerCase().includes(filters.company.toLowerCase())) return false;
 
     // Фільтр по фірмі
-    if (filters.firm && !receipt.firm_name.toLowerCase().includes(filters.firm.toLowerCase())) return false;
+    if (filters.firm && !returnDoc.firm_name.toLowerCase().includes(filters.firm.toLowerCase())) return false;
 
     // Фільтр по складу
-    if (filters.warehouse && !receipt.warehouse_name.toLowerCase().includes(filters.warehouse.toLowerCase())) return false;
+    if (filters.warehouse && !returnDoc.warehouse_name.toLowerCase().includes(filters.warehouse.toLowerCase())) return false;
+
+    // Фільтр по клієнту
+    if (filters.customer && returnDoc.customer_name && !returnDoc.customer_name.toLowerCase().includes(filters.customer.toLowerCase())) return false;
+
+    // Фільтр по причині повернення
+    if (filters.returnReason && returnDoc.return_reason !== filters.returnReason) return false;
 
     // Фільтр по даті від
     if (filters.dateFrom) {
-      const receiptDate = new Date(receipt.date);
+      const returnDate = new Date(returnDoc.date);
       const fromDate = new Date(filters.dateFrom);
-      if (receiptDate < fromDate) return false;
+      if (returnDate < fromDate) return false;
     }
 
     // Фільтр по даті до
     if (filters.dateTo) {
-      const receiptDate = new Date(receipt.date);
+      const returnDate = new Date(returnDoc.date);
       const toDate = new Date(filters.dateTo);
       toDate.setHours(23, 59, 59, 999); // Включити весь день
-      if (receiptDate > toDate) return false;
+      if (returnDate > toDate) return false;
     }
 
     return true;
@@ -197,6 +245,8 @@ const loadReceipts = async () => {
   const uniqueCompanies = [...new Set(data.map(item => item.company_name))].sort();
   const uniqueFirms = [...new Set(data.map(item => item.firm_name))].sort();
   const uniqueWarehouses = [...new Set(data.map(item => item.warehouse_name))].sort();
+  const uniqueCustomers = [...new Set(data.map(item => item.customer_name).filter(Boolean))].sort();
+  const uniqueReturnReasons = [...new Set(data.map(item => item.return_reason).filter(Boolean))].sort();
 
   const getPaginationNumbers = () => {
     const delta = 2;
@@ -237,27 +287,27 @@ const loadReceipts = async () => {
 
   return (
     <>
-      <PageMeta title="Документи поступлення | НашСофт" description="Документи поступлення товарів" />
-      <PageBreadcrumb pageTitle="Документи поступлення" />
+      <PageMeta title="Повернення від клієнтів | НашСофт" description="Документи повернення товарів від клієнтів" />
+      <PageBreadcrumb pageTitle="Повернення від клієнтів" />
 
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-800 dark:text-white">
-            Документи поступлення
+            Повернення від клієнтів
           </h1>
           <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Показано: {paginatedData.length} з {filteredData.length} документів (всього: {data.length})
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="primary" size="sm" onClick={() => navigate("/receipts/create")} className="px-4 py-2">
-            Створити документ
+          <Button variant="primary" size="sm" onClick={() => navigate("/returns/create")} className="px-4 py-2">
+            Створити повернення
           </Button>
           
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={loadReceipts}
+            onClick={loadReturns}
             disabled={loading}
             className="px-3 py-2 flex items-center gap-2"
           >
@@ -280,7 +330,7 @@ const loadReceipts = async () => {
                 type="text"
                 value={search}
                 onChange={handleSearchChange}
-                placeholder="Введіть номер документа, компанію, фірму або склад..."
+                placeholder="Введіть номер повернення, оригінальний документ, клієнта..."
                 className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white"
               />
             </div>
@@ -377,6 +427,40 @@ const loadReceipts = async () => {
                 </select>
               </div>
 
+              {/* Фільтр по клієнту */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Клієнт
+                </label>
+                <select
+                  value={filters.customer}
+                  onChange={(e) => handleFilterChange('customer', e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                >
+                  <option value="">Всі клієнти</option>
+                  {uniqueCustomers.map((customer) => (
+                    <option key={customer} value={customer}>{customer}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Фільтр по причині повернення */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Причина повернення
+                </label>
+                <select
+                  value={filters.returnReason}
+                  onChange={(e) => handleFilterChange('returnReason', e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                >
+                  <option value="">Всі причини</option>
+                  {Object.entries(RETURN_REASONS).map(([key, label]) => (
+                    <option key={key} value={key}>{label}</option>
+                  ))}
+                </select>
+              </div>
+
               {/* Фільтр по даті від */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -411,14 +495,14 @@ const loadReceipts = async () => {
         {filteredData.length === 0 ? (
           <div className="p-12 text-center">
             <div className="mx-auto mb-4 h-12 w-12 text-gray-400">
-              📄
+              ↩️
             </div>
             <h3 className="mb-2 text-lg font-medium text-gray-900 dark:text-white">
-              {data.length === 0 ? "Документи відсутні" : "Документи не знайдені"}
+              {data.length === 0 ? "Повернення відсутні" : "Повернення не знайдені"}
             </h3>
             <p className="text-gray-500 dark:text-gray-400">
               {data.length === 0 
-                ? "Створіть ваш перший документ поступлення" 
+                ? "Створіть ваш перший документ повернення від клієнта" 
                 : "Спробуйте змінити параметри пошуку або фільтри"
               }
             </p>
@@ -426,10 +510,10 @@ const loadReceipts = async () => {
               <Button 
                 variant="primary" 
                 size="sm" 
-                onClick={() => navigate("/receipts/create")}
+                onClick={() => navigate("/returns/create")}
                 className="mt-4"
               >
-                Створити документ
+                Створити повернення
               </Button>
             )}
           </div>
@@ -443,7 +527,7 @@ const loadReceipts = async () => {
                       isHeader
                       className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white"
                     >
-                      № Документа
+                      № Повернення
                     </TableCell>
                     <TableCell
                       isHeader
@@ -455,13 +539,19 @@ const loadReceipts = async () => {
                       isHeader
                       className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white"
                     >
-                      Компанія
+                      Клієнт
                     </TableCell>
                     <TableCell
                       isHeader
                       className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white"
                     >
-                      Фірма
+                      Оригінальний документ
+                    </TableCell>
+                    <TableCell
+                      isHeader
+                      className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white"
+                    >
+                      Причина повернення
                     </TableCell>
                     <TableCell
                       isHeader
@@ -479,30 +569,51 @@ const loadReceipts = async () => {
                 </TableHeader>
 
                 <TableBody>
-                  {paginatedData.map((receipt) => (
+                  {paginatedData.map((returnDoc) => (
                     <tr
-                      key={receipt.id}
+                      key={returnDoc.id}
                       className="border-b border-gray-100 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors cursor-pointer"
-                      onClick={() => navigate(`/receipts/${receipt.id}`)}
+                      onClick={() => navigate(`/returns/${returnDoc.id}`)}
                     >
                       <TableCell className="px-6 py-4 text-gray-800 dark:text-white">
-                        <div className="font-medium">{receipt.doc_number}</div>
-                        <div className="text-sm text-gray-500">ID: {receipt.id}</div>
+                        <div className="font-medium">{returnDoc.doc_number}</div>
+                        <div className="text-sm text-gray-500">ID: {returnDoc.id}</div>
                       </TableCell>
                       <TableCell className="px-6 py-4 text-gray-800 dark:text-white">
-                        {formatDate(receipt.date)}
+                        {formatDate(returnDoc.date)}
                       </TableCell>
                       <TableCell className="px-6 py-4 text-gray-800 dark:text-white">
-                        {receipt.company_name}
+                        <div className="font-medium">{returnDoc.customer_name || "—"}</div>
+                        {returnDoc.trade_point_name && (
+                          <div className="text-sm text-gray-500">{returnDoc.trade_point_name}</div>
+                        )}
                       </TableCell>
                       <TableCell className="px-6 py-4 text-gray-800 dark:text-white">
-                        {receipt.firm_name}
+                        {returnDoc.original_sale_number ? (
+                          <div 
+                            className="text-blue-600 hover:text-blue-800 cursor-pointer font-medium"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/sales/${returnDoc.original_sale_id}`);
+                            }}
+                          >
+                            {returnDoc.original_sale_number}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="px-6 py-4 text-gray-800 dark:text-white">
-                        {receipt.warehouse_name}
+                        <span className="text-sm">
+                          {getReturnReasonLabel(returnDoc.return_reason)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="px-6 py-4 text-gray-800 dark:text-white">
+                        <div className="font-medium">{returnDoc.warehouse_name}</div>
+                        <div className="text-sm text-gray-500">{returnDoc.company_name} • {returnDoc.firm_name}</div>
                       </TableCell>
                       <TableCell className="px-6 py-4">
-                        {getStatusBadge(receipt.status)}
+                        {getStatusBadge(returnDoc.status)}
                       </TableCell>
                     </tr>
                   ))}

@@ -83,66 +83,73 @@ export default function ReceiptDetailPage() {
   }, [id]);
 
   const loadDocument = async (documentId: number) => {
-    try {
-      setLoading(true);
-      console.log(`Loading document ${documentId}...`);
-      
-      // Завантажуємо документ з правильного ендпоінту
-      const response = await axios.get(`document/${documentId}/`);
-      console.log("✅ Document loaded:", response.data);
-      
-      // Одночасно завантажуємо список документів щоб отримати додаткову інформацію
-      const listResponse = await axios.get("documents/?type=receipt");
-      const documentFromList = listResponse.data.find((doc: any) => doc.id === documentId);
-      
-      // Комбінуємо дані з деталей та списку
-      const combinedDocument = {
-        id: documentId,
-        doc_type: response.data.doc_type,
-        doc_number: documentFromList?.doc_number || `DOC-${documentId}`,
-        date: documentFromList?.date || new Date().toISOString(),
-        company: response.data.company,
-        company_name: documentFromList?.company_name || "Компанія не завантажена",
-        firm: response.data.firm,
-        firm_name: documentFromList?.firm_name || "Фірма не завантажена",
-        warehouse: response.data.warehouse,
-        warehouse_name: documentFromList?.warehouse_name || "Склад не завантажений",
-        supplier: response.data.supplier,
-        supplier_name: "Постачальник не завантажений", // Потрібно окремо завантажити
-        contract: response.data.contract,
-        contract_name: "Договір не завантажений", // Потрібно окремо завантажити
-        auto_payment: response.data.auto_payment,
-        status: documentFromList?.status || "draft",
-        created_at: documentFromList?.date || new Date().toISOString(),
-        updated_at: documentFromList?.date || new Date().toISOString(),
-        items: response.data.items.map((item: any) => ({
-          id: item.id,
-          product: item.product,
-          product_name: "Товар не завантажений", // Потрібно окремо завантажити
-          product_code: "",
-          product_unit: "шт",
-          quantity: parseFloat(item.quantity),
-          price: parseFloat(item.price),
-          vat_percent: parseFloat(item.vat_percent),
-          total: parseFloat(item.price_without_vat),
-          vat_amount: parseFloat(item.vat_amount),
-          total_with_vat: parseFloat(item.price_with_vat)
-        }))
-      };
-      
-      setDocument(combinedDocument);
-      
-      // Завантажуємо додаткову інформацію про постачальника, договір та товари
-      loadAdditionalInfo(combinedDocument);
-      
-    } catch (error) {
-      console.error("❌ Error loading document:", error);
-      toast.error("Помилка завантаження документа");
-      navigate("/receipts");
-    } finally {
-      setLoading(false);
-    }
-  };
+  try {
+    setLoading(true);
+    console.log(`Loading document ${documentId}...`);
+    
+    // ✅ ЗАВАНТАЖУЄМО ДОКУМЕНТ:
+    const response = await axios.get(`document/${documentId}/`);
+    console.log("✅ Document loaded:", response.data);
+    
+    // ✅ ЗАВАНТАЖУЄМО СПИСОК З ПРАВИЛЬНОЮ СТРУКТУРОЮ:
+    const listResponse = await axios.get("documents/?type=receipt");
+    console.log("✅ List response:", listResponse.data);
+    
+    // ✅ ВИПРАВИТИ - ДАНІ В listResponse.data.data:
+    const documentsData = listResponse.data.data || [];
+    const documentFromList = documentsData.find((doc: any) => doc.id === documentId);
+    
+    console.log("✅ Document from list:", documentFromList);
+    
+    // ✅ КОМБІНУЄМО ДАНІ:
+    const combinedDocument = {
+      id: documentId,
+      doc_type: response.data.doc_type,
+      doc_number: documentFromList?.doc_number || `DOC-${documentId}`,
+      date: documentFromList?.date || new Date().toISOString(),
+      company: response.data.company,
+      company_name: documentFromList?.company_name || "Компанія не завантажена",
+      firm: response.data.firm,
+      firm_name: documentFromList?.firm_name || "Фірма не завантажена",
+      warehouse: response.data.warehouse,
+      warehouse_name: documentFromList?.warehouse_name || "Склад не завантажений",
+      supplier: response.data.supplier,
+      supplier_name: documentFromList?.supplier_name || "Постачальник не завантажений", // ✅ ДОДАТИ
+      contract: response.data.contract,
+      contract_name: "Договір не завантажений",
+      auto_payment: response.data.auto_payment,
+      status: documentFromList?.status || "draft",
+      created_at: documentFromList?.date || new Date().toISOString(),
+      updated_at: documentFromList?.date || new Date().toISOString(),
+      items: response.data.items?.map((item: any) => ({
+        id: item.id,
+        product: item.product,
+        product_name: "Товар не завантажений",
+        product_code: "",
+        product_unit: "шт",
+        quantity: parseFloat(item.quantity || 0),
+        price: parseFloat(item.price || 0),
+        vat_percent: parseFloat(item.vat_percent || 0),
+        total: parseFloat(item.quantity || 0) * parseFloat(item.price || 0), // ✅ ВИПРАВИТИ РОЗРАХУНОК
+        vat_amount: 0, // ✅ РОЗРАХУВАТИ ПІЗНІШЕ
+        total_with_vat: parseFloat(item.quantity || 0) * parseFloat(item.price || 0) // ✅ ВИПРАВИТИ
+      })) || []
+    };
+    
+    console.log("✅ Combined document:", combinedDocument);
+    setDocument(combinedDocument);
+    
+    // Завантажуємо додаткову інформацію
+    loadAdditionalInfo(combinedDocument);
+    
+  } catch (error) {
+    console.error("❌ Error loading document:", error);
+    toast.error("Помилка завантаження документа");
+    navigate("/receipts");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const loadAdditionalInfo = async (doc: any) => {
     try {

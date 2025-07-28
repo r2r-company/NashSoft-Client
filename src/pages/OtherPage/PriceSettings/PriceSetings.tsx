@@ -2,17 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "../../../config/api";
 import toast from "react-hot-toast";
-import PageMeta from "../../../components/common/PageMeta";
-import PageBreadcrumb from "../../../components/common/PageBreadCrumb";
-import Button from "../../../components/ui/button/Button";
 
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-} from "../../../components/ui/table";
-
+// Типи для документа ціноутворення згідно з Django моделлю
 type PriceSettingDocument = {
   id: number;
   doc_number: string;
@@ -20,13 +11,15 @@ type PriceSettingDocument = {
   company_name: string;
   firm_name: string;
   valid_from: string;
-  status: string;
-  base_type?: string;
+  status: 'draft' | 'approved' | 'cancelled';
+  base_type?: 'receipt' | 'product_group' | 'price_type';
   base_receipt_number?: string;
   base_group_name?: string;
   base_price_type_name?: string;
   trade_points_count: number;
   items_count: number;
+  created_at: string;
+  updated_at: string;
 };
 
 type FilterState = {
@@ -43,7 +36,7 @@ type FilterState = {
 // Статуси документів ціноутворення
 const STATUS_LABELS = {
   draft: "Чернетка",
-  approved: "Затверджено",
+  approved: "Затверджено", 
   cancelled: "Скасовано"
 };
 
@@ -56,9 +49,8 @@ const STATUS_COLORS = {
 // Типи базування
 const BASE_TYPE_LABELS = {
   receipt: "📦 На основі поступлення",
-  product_group: "📁 По групі товарів",
-  price_type: "💰 По типу ціни",
-  manual: "✋ Ручне створення"
+  product_group: "📁 По групі товарів", 
+  price_type: "💰 По типу ціни"
 };
 
 const ITEMS_PER_PAGE_OPTIONS = [10, 25, 50, 100];
@@ -88,7 +80,7 @@ export default function PriceSettings() {
   }, []);
 
   useEffect(() => {
-    setCurrentPage(1); // Скидання сторінки при зміні пошуку або фільтрів
+    setCurrentPage(1);
   }, [search, filters]);
 
   const loadPriceSettings = async () => {
@@ -96,9 +88,20 @@ export default function PriceSettings() {
       setLoading(true);
       console.log("Loading price setting documents...");
       
+      // Використовуємо правильний endpoint згідно з Django API
       const response = await axios.get("price-setting-documents/");
       console.log("✅ Price settings loaded:", response.data);
-      setData(response.data);
+      
+      // Обробляємо дані з бекенду
+      const formattedData = response.data.map((doc: any) => ({
+        ...doc,
+        company_name: doc.company?.name || doc.company_name || 'Невідома компанія',
+        firm_name: doc.firm?.name || doc.firm_name || 'Невідома фірма',
+        trade_points_count: doc.trade_points?.length || doc.trade_points_count || 0,
+        items_count: doc.items?.length || doc.items_count || 0
+      }));
+      
+      setData(formattedData);
     } catch (error) {
       console.error("❌ Error loading price settings:", error);
       toast.error("Помилка завантаження документів ціноутворення");
@@ -132,30 +135,72 @@ export default function PriceSettings() {
     });
   };
 
+  // Дії над документами
   const handleApproveDocument = async (docNumber: string) => {
+    if (!confirm(`Затвердити документ ${docNumber}? Після затвердження документ не можна буде редагувати.`)) {
+      return;
+    }
+
     try {
       console.log(`Approving document ${docNumber}...`);
-      await axios.get(`price-setting-document-action/?action=approve&id=${docNumber}`);
+      
+      // Використовуємо правильний endpoint для дій з документами
+      await axios.post(`price-setting-documents/actions/`, {
+        action: 'approve',
+        doc_number: docNumber
+      });
+      
       toast.success(`Документ ${docNumber} затверджено ✅`);
-      loadPriceSettings(); // Перезавантажуємо список
-    } catch (error) {
+      loadPriceSettings();
+    } catch (error: any) {
       console.error("Error approving document:", error);
-      toast.error("Помилка при затвердженні документа");
+      const errorMessage = error.response?.data?.detail || error.response?.data?.error || "Помилка при затвердженні документа";
+      toast.error(errorMessage);
     }
   };
 
   const handleUnapproveDocument = async (docNumber: string) => {
+    if (!confirm(`Розпровести документ ${docNumber}? Ціни перестануть діяти.`)) {
+      return;
+    }
+
     try {
       console.log(`Unapproving document ${docNumber}...`);
-      await axios.get(`price-setting-document-action/?action=unapprove&id=${docNumber}`);
+      
+      await axios.post(`price-setting-documents/actions/`, {
+        action: 'unapprove',
+        doc_number: docNumber
+      });
+      
       toast.success(`Документ ${docNumber} розпроведено`);
-      loadPriceSettings(); // Перезавантажуємо список
-    } catch (error) {
+      loadPriceSettings();
+    } catch (error: any) {
       console.error("Error unapproving document:", error);
-      toast.error("Помилка при розпроведенні документа");
+      const errorMessage = error.response?.data?.detail || error.response?.data?.error || "Помилка при розпроведенні документа";
+      toast.error(errorMessage);
     }
   };
 
+  const handleDeleteDocument = async (docId: number, docNumber: string) => {
+    if (!confirm(`Видалити документ ${docNumber}? Цю дію неможливо скасувати.`)) {
+      return;
+    }
+
+    try {
+      console.log(`Deleting document ${docId}...`);
+      
+      await axios.delete(`price-setting-documents/${docId}/`);
+      
+      toast.success(`Документ ${docNumber} видалено`);
+      loadPriceSettings();
+    } catch (error: any) {
+      console.error("Error deleting document:", error);
+      const errorMessage = error.response?.data?.detail || error.response?.data?.error || "Помилка при видаленні документа";
+      toast.error(errorMessage);
+    }
+  };
+
+  // Функції форматування
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('uk-UA', {
       year: 'numeric',
@@ -296,33 +341,32 @@ export default function PriceSettings() {
   }
 
   return (
-    <>
-      <PageMeta title="Ціноутворення | НашСофт" description="Документи ціноутворення товарів" />
-      <PageBreadcrumb pageTitle="Ціноутворення" />
-
+    <div className="p-6">
+      {/* Заголовок */}
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-800 dark:text-white">
-            Документи ціноутворення
+            💰 Документи ціноутворення
           </h1>
           <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Показано: {paginatedData.length} з {filteredData.length} документів (всього: {data.length})
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="primary" size="sm" onClick={() => navigate("/price-settings/create")} className="px-4 py-2">
+          <button 
+            onClick={() => navigate("/price-settings/create")}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
             💰 Створити ціноутворення
-          </Button>
+          </button>
           
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <button 
             onClick={loadPriceSettings}
             disabled={loading}
-            className="px-3 py-2 flex items-center gap-2"
+            className="border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
           >
             🔄 Оновити
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -345,17 +389,19 @@ export default function PriceSettings() {
               />
             </div>
           </div>
-          <Button 
-            variant={showFilters ? "primary" : "outline"}
-            size="sm" 
+          <button 
             onClick={() => setShowFilters(!showFilters)}
-            className="px-4 py-2.5 flex items-center gap-2"
+            className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+              showFilters 
+                ? 'bg-blue-600 text-white' 
+                : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+            }`}
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.414A1 1 0 013 6.707V4z" />
             </svg>
             Фільтри
-          </Button>
+          </button>
         </div>
 
         {/* Панель фільтрів */}
@@ -363,13 +409,16 @@ export default function PriceSettings() {
           <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium text-gray-900 dark:text-white">Фільтри</h3>
-              <Button variant="outline" size="sm" onClick={clearFilters} className="px-3 py-1.5">
+              <button 
+                onClick={clearFilters}
+                className="border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-1.5 rounded-lg text-sm"
+              >
                 Очистити все
-              </Button>
+              </button>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* Фільтр по статусу */}
+              {/* Статус */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Статус
@@ -386,7 +435,7 @@ export default function PriceSettings() {
                 </select>
               </div>
 
-              {/* Фільтр по типу базування */}
+              {/* Тип базування */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Тип базування
@@ -403,7 +452,7 @@ export default function PriceSettings() {
                 </select>
               </div>
 
-              {/* Фільтр по компанії */}
+              {/* Компанія */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Компанія
@@ -420,7 +469,7 @@ export default function PriceSettings() {
                 </select>
               </div>
 
-              {/* Фільтр по фірмі */}
+              {/* Фірма */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Фірма
@@ -463,7 +512,7 @@ export default function PriceSettings() {
                 />
               </div>
 
-              {/* Дія від */}
+              {/* Діє від */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Діє від
@@ -476,7 +525,7 @@ export default function PriceSettings() {
                 />
               </div>
 
-              {/* Дія до */}
+              {/* Діє до */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Діє до
@@ -493,6 +542,7 @@ export default function PriceSettings() {
         )}
       </div>
 
+      {/* Таблиця */}
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
         {filteredData.length === 0 ? (
           <div className="p-12 text-center">
@@ -509,78 +559,76 @@ export default function PriceSettings() {
               }
             </p>
             {data.length === 0 && (
-              <Button 
-                variant="primary" 
-                size="sm" 
+              <button 
                 onClick={() => navigate("/price-settings/create")}
-                className="mt-4"
+                className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
               >
                 Створити документ
-              </Button>
+              </button>
             )}
           </div>
         ) : (
           <>
             <div className="max-w-full overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <tr className="border-b border-gray-200 dark:border-white/10 bg-transparent">
-                    <TableCell isHeader className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-white/10">
+                <thead className="bg-gray-50 dark:bg-white/5">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white">
                       № Документа
-                    </TableCell>
-                    <TableCell isHeader className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white">
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white">
                       Дата створення
-                    </TableCell>
-                    <TableCell isHeader className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white">
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white">
                       Діє з
-                    </TableCell>
-                    <TableCell isHeader className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white">
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white">
                       Компанія / Фірма
-                    </TableCell>
-                    <TableCell isHeader className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white">
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white">
                       Базування
-                    </TableCell>
-                    <TableCell isHeader className="px-6 py-4 text-center text-sm font-semibold text-gray-600 dark:text-white">
+                    </th>
+                    <th className="px-6 py-4 text-center text-sm font-semibold text-gray-600 dark:text-white">
                       Торг. точки
-                    </TableCell>
-                    <TableCell isHeader className="px-6 py-4 text-center text-sm font-semibold text-gray-600 dark:text-white">
+                    </th>
+                    <th className="px-6 py-4 text-center text-sm font-semibold text-gray-600 dark:text-white">
                       Позиції
-                    </TableCell>
-                    <TableCell isHeader className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white">
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600 dark:text-white">
                       Статус
-                    </TableCell>
-                    <TableCell isHeader className="px-6 py-4 text-center text-sm font-semibold text-gray-600 dark:text-white">
+                    </th>
+                    <th className="px-6 py-4 text-center text-sm font-semibold text-gray-600 dark:text-white">
                       Дії
-                    </TableCell>
+                    </th>
                   </tr>
-                </TableHeader>
+                </thead>
 
-                <TableBody>
+                <tbody className="bg-white divide-y divide-gray-200 dark:bg-white/[0.02] dark:divide-white/10">
                   {paginatedData.map((doc) => (
                     <tr
                       key={doc.id}
-                      className="border-b border-gray-100 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                      className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                     >
-                      <TableCell className="px-6 py-4 text-gray-800 dark:text-white cursor-pointer">
+                      <td className="px-6 py-4 text-gray-800 dark:text-white">
                         <div 
-                          className="font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          className="font-medium hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
                           onClick={() => navigate(`/price-settings/${doc.id}`)}
                         >
                           {doc.doc_number}
                         </div>
                         <div className="text-sm text-gray-500">ID: {doc.id}</div>
-                      </TableCell>
-                      <TableCell className="px-6 py-4 text-gray-800 dark:text-white">
+                      </td>
+                      <td className="px-6 py-4 text-gray-800 dark:text-white">
                         {formatDate(doc.date)}
-                      </TableCell>
-                      <TableCell className="px-6 py-4 text-gray-800 dark:text-white">
+                      </td>
+                      <td className="px-6 py-4 text-gray-800 dark:text-white">
                         <div className="font-medium">{formatDateOnly(doc.valid_from)}</div>
-                      </TableCell>
-                      <TableCell className="px-6 py-4 text-gray-800 dark:text-white">
+                      </td>
+                      <td className="px-6 py-4 text-gray-800 dark:text-white">
                         <div className="font-medium">{doc.company_name}</div>
                         <div className="text-sm text-gray-500">{doc.firm_name}</div>
-                      </TableCell>
-                      <TableCell className="px-6 py-4">
+                      </td>
+                      <td className="px-6 py-4">
                         {getBaseTypeBadge(doc.base_type)}
                         {doc.base_receipt_number && (
                           <div className="text-xs text-gray-500 mt-1">
@@ -597,48 +645,52 @@ export default function PriceSettings() {
                             💰 {doc.base_price_type_name}
                           </div>
                         )}
-                      </TableCell>
-                      <TableCell className="px-6 py-4 text-center">
+                      </td>
+                      <td className="px-6 py-4 text-center">
                         <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400">
                           {doc.trade_points_count}
                         </span>
-                      </TableCell>
-                      <TableCell className="px-6 py-4 text-center">
+                      </td>
+                      <td className="px-6 py-4 text-center">
                         <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400">
                           {doc.items_count}
                         </span>
-                      </TableCell>
-                      <TableCell className="px-6 py-4">
+                      </td>
+                      <td className="px-6 py-4">
                         {getStatusBadge(doc.status)}
-                      </TableCell>
-                      <TableCell className="px-6 py-4">
+                      </td>
+                      <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           {doc.status === 'draft' && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleApproveDocument(doc.doc_number)}
-                              className="px-2 py-1 text-xs"
-                            >
-                              ✅ Затвердити
-                            </Button>
+                            <>
+                              <button
+                                onClick={() => handleApproveDocument(doc.doc_number)}
+                                className="border border-green-300 hover:bg-green-50 text-green-700 px-2 py-1 rounded text-xs font-medium transition-colors"
+                              >
+                                ✅ Затвердити
+                              </button>
+                              <button
+                                onClick={() => handleDeleteDocument(doc.id, doc.doc_number)}
+                                className="border border-red-300 hover:bg-red-50 text-red-700 px-2 py-1 rounded text-xs font-medium transition-colors"
+                              >
+                                🗑️ Видалити
+                              </button>
+                            </>
                           )}
                           {doc.status === 'approved' && (
-                            <Button
-                              variant="outline"
-                              size="sm"
+                            <button
                               onClick={() => handleUnapproveDocument(doc.doc_number)}
-                              className="px-2 py-1 text-xs"
+                              className="border border-orange-300 hover:bg-orange-50 text-orange-700 px-2 py-1 rounded text-xs font-medium transition-colors"
                             >
                               🔄 Розпровести
-                            </Button>
+                            </button>
                           )}
                         </div>
-                      </TableCell>
+                      </td>
                     </tr>
                   ))}
-                </TableBody>
-              </Table>
+                </tbody>
+              </table>
             </div>
 
             {/* Пагінація */}
@@ -668,15 +720,13 @@ export default function PriceSettings() {
 
                   <div className="flex items-center gap-1">
                     {/* Попередня сторінка */}
-                    <Button
-                      variant="outline"
-                      size="sm"
+                    <button
                       onClick={() => setCurrentPage(currentPage - 1)}
                       disabled={currentPage === 1}
-                      className="px-3 py-1.5"
+                      className="px-3 py-1.5 border border-gray-300 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                     >
                       ←
-                    </Button>
+                    </button>
 
                     {/* Номери сторінок */}
                     {getPaginationNumbers().map((pageNum, index) => (
@@ -684,28 +734,28 @@ export default function PriceSettings() {
                         {pageNum === '...' ? (
                           <span className="px-2 py-1 text-gray-500">...</span>
                         ) : (
-                          <Button
-                            variant={currentPage === pageNum ? "primary" : "outline"}
-                            size="sm"
+                          <button
                             onClick={() => setCurrentPage(pageNum as number)}
-                            className="px-3 py-1.5 min-w-[36px]"
+                            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors min-w-[36px] ${
+                              currentPage === pageNum
+                                ? 'bg-blue-600 text-white'
+                                : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                            }`}
                           >
                             {pageNum}
-                          </Button>
+                          </button>
                         )}
                       </div>
                     ))}
 
                     {/* Наступна сторінка */}
-                    <Button
-                      variant="outline"
-                      size="sm"
+                    <button
                       onClick={() => setCurrentPage(currentPage + 1)}
                       disabled={currentPage === totalPages}
-                      className="px-3 py-1.5"
+                      className="px-3 py-1.5 border border-gray-300 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                     >
                       →
-                    </Button>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -713,6 +763,6 @@ export default function PriceSettings() {
           </>
         )}
       </div>
-    </>
+    </div>
   );
 }
